@@ -1,0 +1,62 @@
+syntax = "proto3";
+package venom;
+
+option go_package = "github.com/mathiassmichno/venom/api;api";
+// option go_package = "api;api";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+service VenomDaemon {
+  rpc StartProcess(StartProcessRequest) returns (StartProcessResponse);
+  rpc StopProcess(StopProcessRequest) returns (StopProcessResponse);
+  rpc StreamLogs(StreamLogsRequest) returns (stream LogEntry);
+  rpc GetMetrics(google.protobuf.Empty) returns (MetricsResponse);
+}
+
+message StartProcessRequest {
+  string id = 1;
+  string cmd = 2;
+  repeated string args = 3;
+  string cwd = 4;
+  map<string,string> env = 5;
+  bool use_pty = 6;
+}
+
+message StartProcessResponse {
+  string id = 1;
+  int32 pid = 2;
+  bool success = 3;
+  string message = 4;
+}
+
+message StopProcessRequest {
+  string id = 1;
+  int32 signal = 2;
+}
+
+message StopProcessResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StreamLogsRequest {
+  string id = 1;
+  bool from_start = 2;
+}
+
+message LogEntry {
+  string id = 1;
+  google.protobuf.Timestamp ts = 2;
+  string stream = 3;
+  bytes data = 4;
+}
+
+message MetricsResponse {
+  google.protobuf.Timestamp ts = 1;
+  double cpu_percent = 2;
+  double mem_percent = 3;
+  uint64 mem_total = 4;
+  uint64 mem_used = 5;
+}
+
