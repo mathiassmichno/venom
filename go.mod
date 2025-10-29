@@ -5,6 +5,7 @@ go 1.25
 require (
 	github.com/google/uuid v1.6.0
 	github.com/shirou/gopsutil/v3 v3.24.5
+	github.com/urfave/cli/v3 v3.5.0
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10
 )

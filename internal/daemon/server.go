@@ -33,7 +33,7 @@ func (s *Server) StartProcess(ctx context.Context, req *pb.StartProcessRequest) 
 }
 
 func (s *Server) StopProcess(ctx context.Context, req *pb.StopProcessRequest) (*pb.StopProcessResponse, error) {
-	err := s.pm.Stop(req.Id, req.Signal)
+	_, err := s.pm.Stop(req.Id, req.Signal, false)
 	if err != nil {
 		return &pb.StopProcessResponse{Success: false, Message: err.Error()}, nil
 	}

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -32,6 +34,8 @@ type ProcInfo struct {
 	Cmd       *exec.Cmd
 	Pid       int
 	StartedAt time.Time
+	StoppedAt time.Time
+	ExitErr   error
 	logSubs   []chan LogChunk
 	logChunks []LogChunk
 	mu        sync.Mutex
@@ -71,19 +75,26 @@ func (pm *ProcManager) Start(id string, cmd string, args []string, cwd string, e
 
 	go pm.readStream(id, "stdout", stdout)
 	go pm.readStream(id, "stderr", stderr)
-	go func() { command.Wait() }()
+	go func() {
+		info.ExitErr = command.Wait()
+		info.StoppedAt = time.Now()
+	}()
 
 	return info, nil
 }
 
-func (pm *ProcManager) Stop(id string, sig int32) error {
+func (pm *ProcManager) Stop(id string, sig int32, wait bool) (*os.ProcessState, error) {
 	pm.mu.Lock()
 	p, ok := pm.procs[id]
 	pm.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("process not found")
+		return nil, fmt.Errorf("process not found")
 	}
-	return p.Cmd.Process.Signal(syscall.Signal(sig))
+	err := p.Cmd.Process.Signal(syscall.Signal(sig))
+	if wait {
+		return p.Cmd.Process.Wait()
+	}
+	return nil, err
 }
 
 func (pm *ProcManager) readStream(id, stream string, r io.Reader) {
@@ -149,10 +160,22 @@ func (pm *ProcManager) UnsubscribeLogs(id string, ch chan LogChunk) {
 	p.logSubs = filtered
 }
 
-func (pm *ProcManager) Shutdown() {
+func (pm *ProcManager) Shutdown() error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	for _, p := range pm.procs {
-		_ = p.Cmd.Process.Kill()
+		if runtime.GOOS == "windows" {
+			_ = p.Cmd.Process.Signal(os.Kill)
+		} else {
+			go func() {
+				time.Sleep(5 * time.Second)
+				err := p.Cmd.Process.Signal(os.Kill)
+				if err != nil {
+					fmt.Printf("MMM %s\n", err)
+				}
+			}()
+			_ = p.Cmd.Process.Signal(os.Interrupt)
+		}
 	}
+	return nil
 }
