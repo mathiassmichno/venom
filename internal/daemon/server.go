@@ -5,6 +5,8 @@ import (
 	"time"
 
 	pb "github.com/mathiassmichno/venom/api"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -19,13 +21,13 @@ func NewServer(pm *ProcManager) *Server {
 }
 
 func (s *Server) StartProcess(ctx context.Context, req *pb.StartProcessRequest) (*pb.StartProcessResponse, error) {
-	info, err := s.pm.Start(
-		req.Id,
-		req.Cmd,
-		req.Args,
-		req.Cwd,
-		req.Env,
-	)
+	info, err := s.pm.Start(ProcStartOptions{
+		ID:   req.Id,
+		Cmd:  req.Cmd,
+		Args: req.Args,
+		Cwd:  req.Cwd,
+		Env:  req.Env,
+	})
 	if err != nil {
 		return &pb.StartProcessResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -41,26 +43,35 @@ func (s *Server) StopProcess(ctx context.Context, req *pb.StopProcessRequest) (*
 }
 
 func (s *Server) StreamLogs(req *pb.StreamLogsRequest, stream pb.VenomDaemon_StreamLogsServer) error {
-	ch := make(chan LogChunk, 32)
-	if err := s.pm.SubscribeLogs(req.Id, req.FromStart, ch); err != nil {
-		return err
+	id := req.GetId()
+
+	s.pm.mu.RLock()
+	proc, ok := s.pm.procs[id]
+	s.pm.mu.RUnlock()
+	if !ok {
+		return status.Errorf(codes.NotFound, "process %q not found", id)
 	}
-	defer s.pm.UnsubscribeLogs(req.Id, ch)
+
+	sub := proc.Logs.Subscribe()
+	defer proc.Logs.Unsubscribe(sub)
 
 	for {
 		select {
-		case <-stream.Context().Done():
-			return nil
-		case chunk := <-ch:
-			entry := &pb.LogEntry{
-				Id:     req.Id,
-				Ts:     timestamppb.New(chunk.Time),
-				Stream: chunk.Stream,
-				Data:   chunk.Data,
+		case line, ok := <-sub:
+			if !ok {
+				return nil
 			}
-			if err := stream.Send(entry); err != nil {
+			logEntry := &pb.LogEntry{
+				Id: id,
+				// TODO: back to timed lines....
+				Ts:   timestamppb.New(time.Now()),
+				Line: line,
+			}
+			if err := stream.Send(logEntry); err != nil {
 				return err
 			}
+		case <-stream.Context().Done():
+			return nil
 		}
 	}
 }

@@ -30,7 +30,6 @@ type StartProcessRequest struct {
 	Args          []string               `protobuf:"bytes,3,rep,name=args,proto3" json:"args,omitempty"`
 	Cwd           string                 `protobuf:"bytes,4,opt,name=cwd,proto3" json:"cwd,omitempty"`
 	Env           map[string]string      `protobuf:"bytes,5,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	UsePty        bool                   `protobuf:"varint,6,opt,name=use_pty,json=usePty,proto3" json:"use_pty,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -98,13 +97,6 @@ func (x *StartProcessRequest) GetEnv() map[string]string {
 		return x.Env
 	}
 	return nil
-}
-
-func (x *StartProcessRequest) GetUsePty() bool {
-	if x != nil {
-		return x.UsePty
-	}
-	return false
 }
 
 type StartProcessResponse struct {
@@ -335,8 +327,7 @@ type LogEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Ts            *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=ts,proto3" json:"ts,omitempty"`
-	Stream        string                 `protobuf:"bytes,3,opt,name=stream,proto3" json:"stream,omitempty"`
-	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
+	Line          string                 `protobuf:"bytes,3,opt,name=line,proto3" json:"line,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -385,18 +376,11 @@ func (x *LogEntry) GetTs() *timestamppb.Timestamp {
 	return nil
 }
 
-func (x *LogEntry) GetStream() string {
+func (x *LogEntry) GetLine() string {
 	if x != nil {
-		return x.Stream
+		return x.Line
 	}
 	return ""
-}
-
-func (x *LogEntry) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
 }
 
 type MetricsResponse struct {
@@ -479,14 +463,13 @@ var File_api_venom_proto protoreflect.FileDescriptor
 
 const file_api_venom_proto_rawDesc = "" +
 	"\n" +
-	"\x0fapi/venom.proto\x12\x05venom\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe5\x01\n" +
+	"\x0fapi/venom.proto\x12\x05venom\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcc\x01\n" +
 	"\x13StartProcessRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03cmd\x18\x02 \x01(\tR\x03cmd\x12\x12\n" +
 	"\x04args\x18\x03 \x03(\tR\x04args\x12\x10\n" +
 	"\x03cwd\x18\x04 \x01(\tR\x03cwd\x125\n" +
-	"\x03env\x18\x05 \x03(\v2#.venom.StartProcessRequest.EnvEntryR\x03env\x12\x17\n" +
-	"\ause_pty\x18\x06 \x01(\bR\x06usePty\x1a6\n" +
+	"\x03env\x18\x05 \x03(\v2#.venom.StartProcessRequest.EnvEntryR\x03env\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"l\n" +
@@ -504,12 +487,11 @@ const file_api_venom_proto_rawDesc = "" +
 	"\x11StreamLogsRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
-	"from_start\x18\x02 \x01(\bR\tfromStart\"r\n" +
+	"from_start\x18\x02 \x01(\bR\tfromStart\"Z\n" +
 	"\bLogEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12*\n" +
-	"\x02ts\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\x12\x16\n" +
-	"\x06stream\x18\x03 \x01(\tR\x06stream\x12\x12\n" +
-	"\x04data\x18\x04 \x01(\fR\x04data\"\xb7\x01\n" +
+	"\x02ts\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\x12\x12\n" +
+	"\x04line\x18\x03 \x01(\tR\x04line\"\xb7\x01\n" +
 	"\x0fMetricsResponse\x12*\n" +
 	"\x02ts\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +

@@ -3,9 +3,9 @@ package daemon
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"sync"
 	"syscall"
@@ -14,21 +14,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type LogChunk struct {
-	Stream string
-	Data   []byte
-	Time   time.Time
-}
-
-type ProcStart struct {
-	ID     string
-	Cmd    string
-	Args   []string
-	Cwd    string
-	Env    map[string]string
-	UsePTY bool
-}
-
 type ProcInfo struct {
 	ID        string
 	Cmd       *exec.Cmd
@@ -36,13 +21,12 @@ type ProcInfo struct {
 	StartedAt time.Time
 	StoppedAt time.Time
 	ExitErr   error
-	logSubs   []chan LogChunk
-	logChunks []LogChunk
+	Logs      *LogBuffer
 	mu        sync.Mutex
 }
 
 type ProcManager struct {
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	procs map[string]*ProcInfo
 }
 
@@ -50,35 +34,90 @@ func NewProcManager() *ProcManager {
 	return &ProcManager{procs: make(map[string]*ProcInfo)}
 }
 
-func (pm *ProcManager) Start(id string, cmd string, args []string, cwd string, env map[string]string) (*ProcInfo, error) {
+type ProcStartOptions struct {
+	ID             string
+	Cmd            string
+	Args           []string
+	Cwd            string
+	Env            map[string]string
+	WaitFor        *regexp.Regexp // optional
+	WaitForTimeout time.Duration  // optional
+}
+
+func (pm *ProcManager) Start(opts ProcStartOptions) (*ProcInfo, error) {
+	id := opts.ID
 	if id == "" {
 		id = uuid.NewString()
 	}
 
-	command := exec.Command(cmd, args...)
-	command.Dir = cwd
-	for k, v := range env {
-		command.Env = append(command.Env, fmt.Sprintf("%s=%s", k, v))
+	cmd := exec.Command(opts.Cmd, opts.Args...)
+	cmd.Dir = opts.Cwd
+	for k, v := range opts.Env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	stdout, _ := command.StdoutPipe()
-	stderr, _ := command.StderrPipe()
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
 
-	if err := command.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 
-	info := &ProcInfo{ID: id, Cmd: command, Pid: command.Process.Pid, StartedAt: time.Now()}
+	info := &ProcInfo{
+		ID:        id,
+		Cmd:       cmd,
+		Pid:       cmd.Process.Pid,
+		StartedAt: time.Now(),
+		Logs:      NewLogBuffer(10_000), // 10k lines buffer
+	}
+
 	pm.mu.Lock()
+	if pm.procs == nil {
+		pm.procs = make(map[string]*ProcInfo)
+	}
 	pm.procs[id] = info
 	pm.mu.Unlock()
 
-	go pm.readStream(id, "stdout", stdout)
-	go pm.readStream(id, "stderr", stderr)
+	// Monitor for process exit
 	go func() {
-		info.ExitErr = command.Wait()
+		info.ExitErr = cmd.Wait()
 		info.StoppedAt = time.Now()
 	}()
+
+	matchCh := make(chan struct{})
+	matched := false
+
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := "[stdout] " + scanner.Text()
+			info.Logs.Add(line)
+			if opts.WaitFor != nil && !matched && opts.WaitFor.MatchString(line) {
+				matched = true
+				close(matchCh)
+			}
+		}
+	}()
+
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := "[stderr] " + scanner.Text()
+			info.Logs.Add(line)
+			if opts.WaitFor != nil && !matched && opts.WaitFor.MatchString(line) {
+				matched = true
+				close(matchCh)
+			}
+		}
+	}()
+
+	if opts.WaitFor != nil {
+		select {
+		case <-matchCh:
+		case <-time.After(opts.WaitForTimeout):
+			return info, fmt.Errorf("timeout waiting for %q", opts.WaitFor.String())
+		}
+	}
 
 	return info, nil
 }
@@ -95,69 +134,6 @@ func (pm *ProcManager) Stop(id string, sig int32, wait bool) (*os.ProcessState, 
 		return p.Cmd.Process.Wait()
 	}
 	return nil, err
-}
-
-func (pm *ProcManager) readStream(id, stream string, r io.Reader) {
-	sc := bufio.NewScanner(r)
-	for sc.Scan() {
-		pm.broadcast(id, stream, sc.Bytes())
-	}
-}
-
-func (pm *ProcManager) broadcast(id, stream string, data []byte) {
-	pm.mu.Lock()
-	p, ok := pm.procs[id]
-	pm.mu.Unlock()
-	if !ok {
-		return
-	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	chunk := LogChunk{Stream: stream, Data: append([]byte{}, data...), Time: time.Now()}
-	p.logChunks = append(p.logChunks, chunk)
-	for _, c := range p.logSubs {
-		select {
-		case c <- chunk:
-		default:
-		}
-	}
-}
-
-func (pm *ProcManager) SubscribeLogs(id string, fromStart bool, ch chan LogChunk) error {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	p, ok := pm.procs[id]
-	if !ok {
-		return fmt.Errorf("process not found")
-	}
-	p.mu.Lock()
-	p.logSubs = append(p.logSubs, ch)
-	if fromStart {
-		for _, chunk := range p.logChunks {
-			ch <- chunk
-		}
-	}
-	p.mu.Unlock()
-	return nil
-}
-
-func (pm *ProcManager) UnsubscribeLogs(id string, ch chan LogChunk) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	p, ok := pm.procs[id]
-	if !ok {
-		return
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	filtered := p.logSubs[:0]
-	for _, sub := range p.logSubs {
-		if sub != ch {
-			filtered = append(filtered, sub)
-		}
-	}
-	p.logSubs = filtered
 }
 
 func (pm *ProcManager) Shutdown() error {
