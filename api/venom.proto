@@ -4,38 +4,42 @@ package venom;
 option go_package = "github.com/mathiassmichno/venom/api;api";
 
 import "google/protobuf/empty.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 service VenomDaemon {
   rpc StartProcess(StartProcessRequest) returns (StartProcessResponse);
   rpc StopProcess(StopProcessRequest) returns (StopProcessResponse);
+  rpc ListProcesses(google.protobuf.Empty) returns (ListProcessesResponse);
   rpc StreamLogs(StreamLogsRequest) returns (stream LogEntry);
   rpc GetMetrics(google.protobuf.Empty) returns (MetricsResponse);
 }
 
 message StartProcessRequest {
-  string id = 1;
-  string cmd = 2;
-  repeated string args = 3;
-  string cwd = 4;
-  map<string,string> env = 5;
+  string name = 1;
+  repeated string args = 2;
+  string dir = 3;
+  repeated string env = 4;
+  string wait_for_regex = 5;
+  google.protobuf.Duration wait_timeout = 6;
 }
 
 message StartProcessResponse {
   string id = 1;
-  int32 pid = 2;
-  bool success = 3;
-  string message = 4;
+  bool success = 2;
+  string message = 3;
 }
 
 message StopProcessRequest {
   string id = 1;
-  int32 signal = 2;
+  bool wait = 2;
 }
 
 message StopProcessResponse {
   bool success = 1;
-  string message = 2;
+  uint32 exit = 2;
+  string message = 3;
+  google.protobuf.Duration runtime = 4;
 }
 
 message StreamLogsRequest {
@@ -44,9 +48,41 @@ message StreamLogsRequest {
 }
 
 message LogEntry {
+  google.protobuf.Timestamp ts = 1;
+  string line = 2;
+
+  // Which output stream this log line came from.
+  Stream stream = 3;
+
+  enum Stream {
+    STREAM_UNSPECIFIED = 0; // Default value.
+    STDOUT = 1;             // Standard output.
+    STDERR = 2;             // Standard error.
+  }
+}
+
+message ProcessInput {
+  // ID of the process
   string id = 1;
-  google.protobuf.Timestamp ts = 2;
-  string line = 3;
+  oneof input {
+    // UTF-8 text to write to stdin (no newline added automatically).
+    string text = 2;
+    // Raw binary input (if the process expects non-UTF8 data).
+    bytes data = 4;
+  }
+}
+
+message ProcessInfo {
+  string name = 1;
+  repeated string args = 2;
+  string dir = 3;
+  repeated string env = 4;
+  uint32 exit = 5;
+  google.protobuf.Duration runtime = 6;
+}
+
+message ListProcessesResponse {
+  map<string,ProcessInfo> processes = 1;
 }
 
 message MetricsResponse {

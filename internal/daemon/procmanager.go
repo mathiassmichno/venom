@@ -1,113 +1,186 @@
 package daemon
 
 import (
-	"bufio"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
-	"os/exec"
 	"regexp"
-	"runtime"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/go-cmd/cmd"
 	"github.com/google/uuid"
 )
 
 type ProcInfo struct {
-	ID        string
-	Cmd       *exec.Cmd
-	Pid       int
-	StartedAt time.Time
-	StoppedAt time.Time
-	ExitErr   error
-	Logs      *LogBuffer
-	mu        sync.Mutex
+	ID  string
+	Cmd *cmd.Cmd
+
+	sync.RWMutex
+	logSubs map[chan LogEntry]struct{}
 }
 
 type ProcManager struct {
-	mu    sync.RWMutex
-	procs map[string]*ProcInfo
+	sync.RWMutex
+	Procs map[string]*ProcInfo
 }
 
 func NewProcManager() *ProcManager {
-	return &ProcManager{procs: make(map[string]*ProcInfo)}
+	return &ProcManager{Procs: make(map[string]*ProcInfo)}
 }
 
 type ProcStartOptions struct {
-	ID             string
-	Cmd            string
-	Args           []string
 	Cwd            string
-	Env            map[string]string
-	WaitFor        *regexp.Regexp // optional
-	WaitForTimeout time.Duration  // optional
+	Dir            string
+	Env            []string
+	WaitFor        *regexp.Regexp
+	WaitForTimeout time.Duration
 }
 
-func (pm *ProcManager) Start(opts ProcStartOptions) (*ProcInfo, error) {
-	id := opts.ID
-	if id == "" {
-		id = uuid.NewString()
+type LogEntry struct {
+	ts     time.Time
+	stream Stream
+	line   string
+}
+
+type Stream int
+
+const (
+	StreamNONE Stream = iota
+	StreamSTDOUT
+	StreamSTDERR
+)
+
+func (p *ProcInfo) PublishLine(stream Stream, line string) {
+	slog.Info("PublishLine", "stream", stream, "line", line)
+	ts := time.Now()
+	for ch := range p.logSubs {
+		select {
+		case ch <- LogEntry{ts: ts, line: line, stream: stream}:
+		default:
+		}
+	}
+}
+
+func (p *ProcInfo) Subscribe() chan LogEntry {
+	ch := make(chan LogEntry, 200)
+	slog.Info("subscribing", "ch", ch, "id", p.ID, "name", p.Cmd.Name)
+
+	p.Lock()
+	slog.Info("locked proc")
+	defer p.Unlock()
+
+	go func(bufferedLines []string) {
+		for _, line := range bufferedLines {
+			select {
+			case ch <- LogEntry{
+				ts:     time.Now(),
+				stream: StreamNONE,
+				line:   line,
+			}:
+				slog.Info("sent buffered line", "id", p.ID, "line", line)
+			default:
+				slog.Info("DEFAULTED!", "id", p.ID, "line", line)
+			}
+		}
+	}(append([]string(nil), p.Cmd.Status().Stdout...))
+
+	p.logSubs[ch] = struct{}{}
+
+	return ch
+}
+
+// Unsubscribe removes a subscription.
+func (p *ProcInfo) Unsubscribe(ch chan LogEntry) {
+	slog.Info("unsubscribing", "ch", ch, "id", p.ID, "name", p.Cmd.Name)
+	p.Lock()
+	delete(p.logSubs, ch)
+	if _, ok := <-ch; ok {
+		close(ch)
+	}
+	p.Unlock()
+}
+
+// DumpToFile writes the entire buffer to a file.
+func (p *ProcInfo) DumpToFile(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
 	}
 
-	cmd := exec.Command(opts.Cmd, opts.Args...)
-	cmd.Dir = opts.Cwd
-	for k, v := range opts.Env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-	}
+	p.RLock()
+	defer p.RUnlock()
 
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-
-	if err := cmd.Start(); err != nil {
-		return nil, err
+	// TODO: Stderr???
+	for _, line := range p.Cmd.Status().Stdout {
+		if _, err := f.WriteString(line + "\n"); err != nil {
+			return err
+		}
 	}
+	return f.Close()
+}
+
+func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) (*ProcInfo, error) {
+	id := uuid.NewString()
+	slog.Info("starting process", "id", id, "name", name, "args", args, "opts", opts)
+
+	command := cmd.NewCmdOptions(cmd.Options{
+		Buffered:       true,
+		Streaming:      true,
+		CombinedOutput: true,
+	}, name, args...)
+
+	command.Dir = opts.Cwd
+	command.Env = append(command.Env, opts.Env...)
+
+	command.Start()
 
 	info := &ProcInfo{
-		ID:        id,
-		Cmd:       cmd,
-		Pid:       cmd.Process.Pid,
-		StartedAt: time.Now(),
-		Logs:      NewLogBuffer(10_000), // 10k lines buffer
+		ID:      id,
+		Cmd:     command,
+		logSubs: make(map[chan LogEntry]struct{}),
 	}
 
-	pm.mu.Lock()
-	if pm.procs == nil {
-		pm.procs = make(map[string]*ProcInfo)
+	pm.Lock()
+	if pm.Procs == nil {
+		pm.Procs = make(map[string]*ProcInfo)
 	}
-	pm.procs[id] = info
-	pm.mu.Unlock()
-
-	// Monitor for process exit
-	go func() {
-		info.ExitErr = cmd.Wait()
-		info.StoppedAt = time.Now()
-	}()
+	pm.Procs[id] = info
+	pm.Unlock()
 
 	matchCh := make(chan struct{})
 	matched := false
 
 	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			line := "[stdout] " + scanner.Text()
-			info.Logs.Add(line)
+		for command.Stdout != nil || command.Stderr != nil {
+			var line string
+			var open bool
+			var stream Stream
+			select {
+			case line, open = <-command.Stdout:
+				stream = StreamSTDOUT
+				if !open {
+					command.Stdout = nil
+				}
+			case line, open = <-command.Stderr:
+				stream = StreamSTDERR
+				if !open {
+					command.Stderr = nil
+				}
+			}
 			if opts.WaitFor != nil && !matched && opts.WaitFor.MatchString(line) {
 				matched = true
 				close(matchCh)
+			}
+			if open {
+				info.PublishLine(stream, line)
 			}
 		}
-	}()
-
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := "[stderr] " + scanner.Text()
-			info.Logs.Add(line)
-			if opts.WaitFor != nil && !matched && opts.WaitFor.MatchString(line) {
-				matched = true
-				close(matchCh)
-			}
+		info.Lock()
+		defer info.Unlock()
+		for ch := range info.logSubs {
+			close(ch)
 		}
 	}()
 
@@ -122,36 +195,34 @@ func (pm *ProcManager) Start(opts ProcStartOptions) (*ProcInfo, error) {
 	return info, nil
 }
 
-func (pm *ProcManager) Stop(id string, sig int32, wait bool) (*os.ProcessState, error) {
-	pm.mu.Lock()
-	p, ok := pm.procs[id]
-	pm.mu.Unlock()
+func (pm *ProcManager) Stop(id string, wait bool) (*cmd.Status, error) {
+	pm.Lock()
+	p, ok := pm.Procs[id]
+	pm.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("process not found")
 	}
-	err := p.Cmd.Process.Signal(syscall.Signal(sig))
+	err := p.Cmd.Stop()
 	if wait {
-		return p.Cmd.Process.Wait()
+		<-p.Cmd.Done()
 	}
-	return nil, err
+	status := p.Cmd.Status()
+	return &status, err
 }
 
 func (pm *ProcManager) Shutdown() error {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	for _, p := range pm.procs {
-		if runtime.GOOS == "windows" {
-			_ = p.Cmd.Process.Signal(os.Kill)
-		} else {
-			go func() {
-				time.Sleep(5 * time.Second)
-				err := p.Cmd.Process.Signal(os.Kill)
-				if err != nil {
-					fmt.Printf("MMM %s\n", err)
-				}
-			}()
-			_ = p.Cmd.Process.Signal(os.Interrupt)
+	pm.Lock()
+	defer pm.Unlock()
+	var errs []error
+
+	for _, p := range pm.Procs {
+		if err := p.Cmd.Stop(); err != nil {
+			errs = append(errs, err)
 		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 	return nil
 }

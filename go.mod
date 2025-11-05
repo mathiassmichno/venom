@@ -3,6 +3,7 @@ module github.com/mathiassmichno/venom
 go 1.25
 
 require (
+	github.com/go-cmd/cmd v1.4.3
 	github.com/google/uuid v1.6.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/urfave/cli/v3 v3.5.0

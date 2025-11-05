@@ -20,10 +20,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VenomDaemon_StartProcess_FullMethodName = "/venom.VenomDaemon/StartProcess"
-	VenomDaemon_StopProcess_FullMethodName  = "/venom.VenomDaemon/StopProcess"
-	VenomDaemon_StreamLogs_FullMethodName   = "/venom.VenomDaemon/StreamLogs"
-	VenomDaemon_GetMetrics_FullMethodName   = "/venom.VenomDaemon/GetMetrics"
+	VenomDaemon_StartProcess_FullMethodName  = "/venom.VenomDaemon/StartProcess"
+	VenomDaemon_StopProcess_FullMethodName   = "/venom.VenomDaemon/StopProcess"
+	VenomDaemon_ListProcesses_FullMethodName = "/venom.VenomDaemon/ListProcesses"
+	VenomDaemon_StreamLogs_FullMethodName    = "/venom.VenomDaemon/StreamLogs"
+	VenomDaemon_GetMetrics_FullMethodName    = "/venom.VenomDaemon/GetMetrics"
 )
 
 // VenomDaemonClient is the client API for VenomDaemon service.
@@ -32,6 +33,7 @@ const (
 type VenomDaemonClient interface {
 	StartProcess(ctx context.Context, in *StartProcessRequest, opts ...grpc.CallOption) (*StartProcessResponse, error)
 	StopProcess(ctx context.Context, in *StopProcessRequest, opts ...grpc.CallOption) (*StopProcessResponse, error)
+	ListProcesses(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListProcessesResponse, error)
 	StreamLogs(ctx context.Context, in *StreamLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogEntry], error)
 	GetMetrics(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MetricsResponse, error)
 }
@@ -58,6 +60,16 @@ func (c *venomDaemonClient) StopProcess(ctx context.Context, in *StopProcessRequ
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StopProcessResponse)
 	err := c.cc.Invoke(ctx, VenomDaemon_StopProcess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *venomDaemonClient) ListProcesses(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListProcessesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListProcessesResponse)
+	err := c.cc.Invoke(ctx, VenomDaemon_ListProcesses_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +111,7 @@ func (c *venomDaemonClient) GetMetrics(ctx context.Context, in *emptypb.Empty, o
 type VenomDaemonServer interface {
 	StartProcess(context.Context, *StartProcessRequest) (*StartProcessResponse, error)
 	StopProcess(context.Context, *StopProcessRequest) (*StopProcessResponse, error)
+	ListProcesses(context.Context, *emptypb.Empty) (*ListProcessesResponse, error)
 	StreamLogs(*StreamLogsRequest, grpc.ServerStreamingServer[LogEntry]) error
 	GetMetrics(context.Context, *emptypb.Empty) (*MetricsResponse, error)
 	mustEmbedUnimplementedVenomDaemonServer()
@@ -116,6 +129,9 @@ func (UnimplementedVenomDaemonServer) StartProcess(context.Context, *StartProces
 }
 func (UnimplementedVenomDaemonServer) StopProcess(context.Context, *StopProcessRequest) (*StopProcessResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StopProcess not implemented")
+}
+func (UnimplementedVenomDaemonServer) ListProcesses(context.Context, *emptypb.Empty) (*ListProcessesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListProcesses not implemented")
 }
 func (UnimplementedVenomDaemonServer) StreamLogs(*StreamLogsRequest, grpc.ServerStreamingServer[LogEntry]) error {
 	return status.Errorf(codes.Unimplemented, "method StreamLogs not implemented")
@@ -180,6 +196,24 @@ func _VenomDaemon_StopProcess_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VenomDaemon_ListProcesses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VenomDaemonServer).ListProcesses(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VenomDaemon_ListProcesses_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VenomDaemonServer).ListProcesses(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _VenomDaemon_StreamLogs_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamLogsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -223,6 +257,10 @@ var VenomDaemon_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopProcess",
 			Handler:    _VenomDaemon_StopProcess_Handler,
+		},
+		{
+			MethodName: "ListProcesses",
+			Handler:    _VenomDaemon_ListProcesses_Handler,
 		},
 		{
 			MethodName: "GetMetrics",
