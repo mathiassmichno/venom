@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"time"
 
@@ -62,8 +63,8 @@ func main() {
 					if err != nil {
 						return err
 					}
-					for id, p := range resp.Processes {
-						fmt.Printf("%s\t%s\n", id, p.String())
+					for _, p := range resp.Processes {
+						fmt.Printf("%s\t%s\n", p.Id, p.String())
 					}
 					return nil
 				},
@@ -72,29 +73,45 @@ func main() {
 				Name:  "start",
 				Usage: "Start a new process",
 				Flags: []cli.Flag{
-					&cli.StringSliceFlag{Name: "arg", Usage: "argument (can repeat)"},
 					&cli.StringFlag{Name: "cwd", Usage: "working directory"},
+					&cli.StringSliceFlag{Name: "env", Usage: "envvar \"name=value\" (can repeat)"},
+					&cli.DurationFlag{Name: "wait-timeout", Usage: "timeout while waiting", Value: 10 * time.Second},
+					&cli.BoolFlag{Name: "wait-for-exit", Usage: "wait for the started process to exit"},
+					&cli.StringFlag{Name: "wait-for-regex", Usage: "wait for the output of the started process to match regex"},
 				},
-				Action: func(ctx context.Context, cli *cli.Command) error {
-					name := cli.Args().First()
-					argv := cli.Args().Tail()
-					dir := cli.String("dir")
-					fmt.Println(name, argv)
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					name := cmd.Args().First()
+					args := cmd.Args().Tail()
+					dir := cmd.String("dir")
+					env := cmd.StringSlice("env")
 					if name == "" {
-						return fmt.Errorf("name required")
+						return cli.Exit("name required", 1)
+					}
+					if cmd.IsSet("wait-for-exit") && cmd.IsSet("wait-for-regex") {
+						return cli.Exit("wait-for-exit and wait-for-regex flags are mutually exclusive", 1)
 					}
 
 					ctx, cancel := context.WithTimeout(ctx, timeout)
 					defer cancel()
-					conn, client, err := dial()
+					conn, cmdent, err := dial()
 					if err != nil {
 						return err
 					}
 					defer conn.Close()
 
-					req := &pb.StartProcessRequest{Name: name, Args: argv, Dir: dir}
+					req := &pb.StartProcessRequest{
+						Definition: &pb.ProcessDefinition{Name: name, Args: args, Dir: dir, Env: env},
+					}
+					if cmd.Bool("wait-for-exit") {
+						req.WaitFor = &pb.StartProcessRequest_Exit{Exit: true}
+					} else if regexStr := cmd.String("wait-for-regex"); regexStr != "" {
+						if _, err := regexp.Compile(regexStr); err != nil {
+							cli.Exit(fmt.Sprintf("wait-for-regex is not a valid regex: %s", err.Error()), 1)
+						}
+						req.WaitFor = &pb.StartProcessRequest_Regex{Regex: regexStr}
+					}
 					var rsp *pb.StartProcessResponse
-					rsp, err = client.StartProcess(ctx, req)
+					rsp, err = cmdent.StartProcess(ctx, req)
 					if err != nil {
 						return err
 					}
@@ -124,7 +141,7 @@ func main() {
 					if err != nil {
 						return err
 					}
-					fmt.Println("stopped", id, "exit code", rsp.Exit, rsp.Message)
+					fmt.Println("stopped", id, rsp.Status.String())
 					return nil
 				},
 			},

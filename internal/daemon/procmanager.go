@@ -31,11 +31,12 @@ func NewProcManager() *ProcManager {
 }
 
 type ProcStartOptions struct {
-	Cwd            string
-	Dir            string
-	Env            []string
-	WaitFor        *regexp.Regexp
-	WaitForTimeout time.Duration
+	Cwd          string
+	Dir          string
+	Env          []string
+	WaitForExit  bool
+	WaitForRegex *regexp.Regexp
+	WaitTimeout  *time.Duration
 }
 
 type LogEntry struct {
@@ -169,7 +170,7 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 					command.Stderr = nil
 				}
 			}
-			if opts.WaitFor != nil && !matched && opts.WaitFor.MatchString(line) {
+			if opts.WaitForRegex != nil && !matched && opts.WaitForRegex.MatchString(line) {
 				matched = true
 				close(matchCh)
 			}
@@ -184,18 +185,23 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 		}
 	}()
 
-	if opts.WaitFor != nil {
+	if opts.WaitForExit || opts.WaitForRegex != nil {
+		timeout := time.Duration(60 * time.Second)
+		if opts.WaitTimeout != nil {
+			timeout = *opts.WaitTimeout
+		}
 		select {
+		case <-command.Done():
 		case <-matchCh:
-		case <-time.After(opts.WaitForTimeout):
-			return info, fmt.Errorf("timeout waiting for %q", opts.WaitFor.String())
+		case <-time.After(timeout):
+			return info, fmt.Errorf("timeout while waiting")
 		}
 	}
 
 	return info, nil
 }
 
-func (pm *ProcManager) Stop(id string, wait bool) (*cmd.Status, error) {
+func (pm *ProcManager) Stop(id string, wait bool) (*ProcInfo, error) {
 	pm.Lock()
 	p, ok := pm.Procs[id]
 	pm.Unlock()
@@ -206,8 +212,7 @@ func (pm *ProcManager) Stop(id string, wait bool) (*cmd.Status, error) {
 	if wait {
 		<-p.Cmd.Done()
 	}
-	status := p.Cmd.Status()
-	return &status, err
+	return p, err
 }
 
 func (pm *ProcManager) Shutdown() error {

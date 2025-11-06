@@ -15,19 +15,40 @@ service VenomDaemon {
   rpc GetMetrics(google.protobuf.Empty) returns (MetricsResponse);
 }
 
-message StartProcessRequest {
+message ProcessDefinition {
   string name = 1;
   repeated string args = 2;
   string dir = 3;
   repeated string env = 4;
-  string wait_for_regex = 5;
-  google.protobuf.Duration wait_timeout = 6;
+}
+
+message ProcessStatus {
+  oneof state {
+    uint32 exit = 1;
+    string error = 2;
+  }
+  google.protobuf.Duration runtime = 6;
+}
+
+message ProcessInfo {
+  string id = 1;
+  ProcessDefinition definition = 2;
+  ProcessStatus status = 3;
+}
+
+message StartProcessRequest {
+  ProcessDefinition definition = 1;
+  oneof wait_for {
+    string regex = 2;
+    bool exit = 3;
+  }
+  optional google.protobuf.Duration wait_timeout = 4;
 }
 
 message StartProcessResponse {
   string id = 1;
   bool success = 2;
-  string message = 3;
+  ProcessStatus status = 3;
 }
 
 message StopProcessRequest {
@@ -37,9 +58,7 @@ message StopProcessRequest {
 
 message StopProcessResponse {
   bool success = 1;
-  uint32 exit = 2;
-  string message = 3;
-  google.protobuf.Duration runtime = 4;
+  ProcessStatus status = 2;
 }
 
 message StreamLogsRequest {
@@ -51,9 +70,7 @@ message LogEntry {
   google.protobuf.Timestamp ts = 1;
   string line = 2;
 
-  // Which output stream this log line came from.
   Stream stream = 3;
-
   enum Stream {
     STREAM_UNSPECIFIED = 0; // Default value.
     STDOUT = 1;             // Standard output.
@@ -62,27 +79,16 @@ message LogEntry {
 }
 
 message ProcessInput {
-  // ID of the process
   string id = 1;
   oneof input {
-    // UTF-8 text to write to stdin (no newline added automatically).
     string text = 2;
-    // Raw binary input (if the process expects non-UTF8 data).
-    bytes data = 4;
+    bytes data = 3;
   }
 }
 
-message ProcessInfo {
-  string name = 1;
-  repeated string args = 2;
-  string dir = 3;
-  repeated string env = 4;
-  uint32 exit = 5;
-  google.protobuf.Duration runtime = 6;
-}
 
 message ListProcessesResponse {
-  map<string,ProcessInfo> processes = 1;
+  repeated ProcessInfo processes = 1;
 }
 
 message MetricsResponse {

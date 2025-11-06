@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 	"time"
 
 	pb "github.com/mathiassmichno/venom/api"
@@ -22,29 +24,70 @@ func NewServer(pm *ProcManager) *Server {
 	return &Server{pm: pm}
 }
 
-func (s *Server) StartProcess(ctx context.Context, req *pb.StartProcessRequest) (*pb.StartProcessResponse, error) {
-	info, err := s.pm.Start(req.Name, req.Args, ProcStartOptions{
-		Dir: req.Dir,
-		Env: req.Env,
-	})
-	if err != nil {
-		return &pb.StartProcessResponse{Success: false, Message: err.Error()}, nil
+func NewProcessStatusFromProcInfo(procInfo *ProcInfo) *pb.ProcessStatus {
+	var ps pb.ProcessStatus
+	cs := procInfo.Cmd.Status()
+	if cs.Error != nil {
+		ps.State = &pb.ProcessStatus_Error{Error: cs.Error.Error()}
 	}
-	return &pb.StartProcessResponse{Id: info.ID, Success: true}, nil
+	if cs.StartTs > 0 {
+		ps.Runtime = durationpb.New(time.Duration(cs.Runtime * float64(time.Second)))
+	}
+	if cs.StopTs > 0 {
+		ps.State = &pb.ProcessStatus_Exit{Exit: uint32(cs.Exit)}
+	}
+	return &ps
+}
+
+func NewProcessStatusFromError(err error) *pb.ProcessStatus {
+	return &pb.ProcessStatus{State: &pb.ProcessStatus_Error{Error: err.Error()}}
+}
+
+func (s *Server) StartProcess(ctx context.Context, req *pb.StartProcessRequest) (*pb.StartProcessResponse, error) {
+	psOpts := ProcStartOptions{
+		Dir: req.Definition.Dir,
+		Env: req.Definition.Env,
+	}
+
+	// handle oneof
+	switch waitFor := req.WaitFor.(type) {
+	case *pb.StartProcessRequest_Exit:
+		psOpts.WaitForExit = waitFor.Exit
+
+	case *pb.StartProcessRequest_Regex:
+		re, err := regexp.Compile(waitFor.Regex)
+		if err != nil {
+			return &pb.StartProcessResponse{
+				Success: false,
+				Status: &pb.ProcessStatus{
+					State: &pb.ProcessStatus_Error{
+						Error: fmt.Sprintf("invalid regex: %v", err),
+					},
+				},
+			}, nil
+		}
+		psOpts.WaitForRegex = re
+	}
+
+	// handle optional timeout only if wait_for is set
+	if req.WaitFor != nil && req.WaitTimeout != nil {
+		d := req.WaitTimeout.AsDuration()
+		psOpts.WaitTimeout = &d
+	}
+
+	info, err := s.pm.Start(req.Definition.Name, req.Definition.Args, psOpts)
+	if err != nil {
+		return &pb.StartProcessResponse{Success: false, Status: NewProcessStatusFromError(err)}, nil
+	}
+	return &pb.StartProcessResponse{Id: info.ID, Success: true, Status: NewProcessStatusFromProcInfo(info)}, nil
 }
 
 func (s *Server) StopProcess(ctx context.Context, req *pb.StopProcessRequest) (*pb.StopProcessResponse, error) {
-	status, err := s.pm.Stop(req.Id, req.Wait)
+	info, err := s.pm.Stop(req.Id, req.Wait)
 	if err != nil {
-		return &pb.StopProcessResponse{Success: false, Message: err.Error()}, nil
+		return &pb.StopProcessResponse{Success: false, Status: NewProcessStatusFromError(err)}, nil
 	}
-	if status == nil {
-		return &pb.StopProcessResponse{Success: false, Message: "process status was nil!"}, nil
-	} else if status.Error != nil {
-		return &pb.StopProcessResponse{Success: false, Message: status.Error.Error(), Runtime: durationpb.New(time.Duration(status.Runtime * float64(time.Second)))}, nil
-	} else {
-		return &pb.StopProcessResponse{Success: true, Exit: uint32(status.Exit), Runtime: durationpb.New(time.Duration(status.Runtime * float64(time.Second)))}, nil
-	}
+	return &pb.StopProcessResponse{Success: true, Status: NewProcessStatusFromProcInfo(info)}, nil
 }
 
 func (s *Server) StreamLogs(req *pb.StreamLogsRequest, stream pb.VenomDaemon_StreamLogsServer) error {
@@ -76,16 +119,18 @@ func (s *Server) StreamLogs(req *pb.StreamLogsRequest, stream pb.VenomDaemon_Str
 }
 
 func (s *Server) ListProcesses(ctx context.Context, _ *emptypb.Empty) (*pb.ListProcessesResponse, error) {
-	processes := make(map[string]*pb.ProcessInfo)
-	for id, proc := range s.pm.Procs {
-		processes[id] = &pb.ProcessInfo{
-			Name:    proc.Cmd.Name,
-			Args:    proc.Cmd.Args,
-			Dir:     proc.Cmd.Dir,
-			Env:     proc.Cmd.Env,
-			Exit:    uint32(proc.Cmd.Status().Exit),
-			Runtime: durationpb.New(time.Duration(proc.Cmd.Status().Runtime * float64(time.Second))),
-		}
+	var processes []*pb.ProcessInfo
+	for _, info := range s.pm.Procs {
+		processes = append(processes, &pb.ProcessInfo{
+			Id: info.ID,
+			Definition: &pb.ProcessDefinition{
+				Name: info.Cmd.Name,
+				Args: info.Cmd.Args,
+				Dir:  info.Cmd.Dir,
+				Env:  info.Cmd.Env,
+			},
+			Status: NewProcessStatusFromProcInfo(info),
+		})
 	}
 	return &pb.ListProcessesResponse{Processes: processes}, nil
 }
