@@ -42,15 +42,20 @@ func main() {
 		Name:  "venomctl",
 		Usage: "Control venomd (start/stop/list/logs/send-input)",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "addr", Value: "localhost:9988", Usage: "daemon gRPC address (unix:// or host:port)", Destination: &addr},
-			// &cli.StringFlag{Name: "addr", Value: "unix:///var/run/venomd.sock", Usage: "daemon gRPC address (unix:// or host:port)", Destination: &addr},
-			&cli.DurationFlag{Name: "timeout", Value: 10 * time.Second, Usage: "RPC timeout", Destination: &timeout},
+			&cli.StringFlag{
+				Name:        "addr",
+				Value:       "localhost:9988",
+				Usage:       "daemon gRPC address (unix:// or host:port)",
+				Destination: &addr,
+				Sources:     cli.EnvVars("VENOMD_ADDR"),
+			},
+			&cli.DurationFlag{Name: "timeout", Value: 60 * time.Second, Usage: "RPC timeout", Destination: &timeout},
 		},
 		Commands: []*cli.Command{
 			{
 				Name:  "list",
 				Usage: "List running processes",
-				Action: func(ctx context.Context, cli *cli.Command) error {
+				Action: func(ctx context.Context, cmd *cli.Command) error {
 					ctx, cancel := context.WithTimeout(context.Background(), timeout)
 					defer cancel()
 					conn, client, err := dial()
@@ -137,7 +142,7 @@ func main() {
 					defer conn.Close()
 
 					var rsp *pb.StopProcessResponse
-					rsp, err = client.StopProcess(ctx, &pb.StopProcessRequest{Id: id})
+					rsp, err = client.StopProcess(ctx, &pb.StopProcessRequest{Id: id, Wait: true})
 					if err != nil {
 						return err
 					}
@@ -195,7 +200,7 @@ func main() {
 			{
 				Name:  "version",
 				Usage: "Show client version",
-				Action: func(ctx context.Context, cli *cli.Command) error {
+				Action: func(ctx context.Context, cmd *cli.Command) error {
 					fmt.Println("venomctl (unversioned)")
 					return nil
 				},

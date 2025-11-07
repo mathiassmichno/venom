@@ -54,7 +54,6 @@ const (
 )
 
 func (p *ProcInfo) PublishLine(stream Stream, line string) {
-	slog.Info("PublishLine", "stream", stream, "line", line)
 	ts := time.Now()
 	for ch := range p.logSubs {
 		select {
@@ -125,6 +124,7 @@ func (p *ProcInfo) DumpToFile(path string) error {
 func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) (*ProcInfo, error) {
 	id := uuid.NewString()
 	slog.Info("starting process", "id", id, "name", name, "args", args, "opts", opts)
+	defer slog.Info("started process", "id", id)
 
 	command := cmd.NewCmdOptions(cmd.Options{
 		Buffered:       true,
@@ -135,7 +135,7 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 	command.Dir = opts.Cwd
 	command.Env = append(command.Env, opts.Env...)
 
-	command.Start()
+	statusCh := command.Start()
 
 	info := &ProcInfo{
 		ID:      id,
@@ -191,7 +191,8 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 			timeout = *opts.WaitTimeout
 		}
 		select {
-		case <-command.Done():
+		case status := <-statusCh:
+			slog.Info("process exited", "id", id, "status", status)
 		case <-matchCh:
 		case <-time.After(timeout):
 			return info, fmt.Errorf("timeout while waiting")
@@ -202,6 +203,8 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 }
 
 func (pm *ProcManager) Stop(id string, wait bool) (*ProcInfo, error) {
+	slog.Info("stopping process", "id", id)
+	defer slog.Info("stopped process", "id", id)
 	pm.Lock()
 	p, ok := pm.Procs[id]
 	pm.Unlock()
@@ -220,7 +223,9 @@ func (pm *ProcManager) Shutdown() error {
 	defer pm.Unlock()
 	var errs []error
 
+	slog.Info("shutting down process manager", "processes", pm.Procs)
 	for _, p := range pm.Procs {
+		slog.Info("stopping process", "id", p.ID)
 		if err := p.Cmd.Stop(); err != nil {
 			errs = append(errs, err)
 		}
