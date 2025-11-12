@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"io"
 	"regexp"
 	"time"
 
@@ -45,8 +46,9 @@ func NewProcessStatusFromError(err error) *pb.ProcessStatus {
 
 func (s *Server) StartProcess(ctx context.Context, req *pb.StartProcessRequest) (*pb.StartProcessResponse, error) {
 	psOpts := ProcStartOptions{
-		Dir: req.Definition.Dir,
-		Env: req.Definition.Env,
+		Dir:           req.Definition.Dir,
+		Env:           req.Definition.Env,
+		WithStdinPipe: req.WithStdinPipe,
 	}
 
 	// handle oneof
@@ -88,6 +90,39 @@ func (s *Server) StopProcess(ctx context.Context, req *pb.StopProcessRequest) (*
 		return &pb.StopProcessResponse{Success: false, Status: NewProcessStatusFromError(err)}, nil
 	}
 	return &pb.StopProcessResponse{Success: true, Status: NewProcessStatusFromProcInfo(info)}, nil
+}
+
+func (s *Server) SendProcessInput(ctx context.Context, req *pb.ProcessInput) (*pb.ProcessInputWritten, error) {
+	id := req.GetId()
+
+	s.pm.RLock()
+	info := s.pm.Procs[id]
+	s.pm.RUnlock()
+
+	if info.Stdin == nil {
+		return nil, fmt.Errorf("process not started with stdin pipe")
+	}
+	var written int
+	var err error
+	switch req.Input.(type) {
+	case *pb.ProcessInput_Text:
+		written, err = io.WriteString(info.Stdin, req.GetText())
+	case *pb.ProcessInput_Data:
+		written, err = info.Stdin.Write(req.GetData())
+	}
+
+	if err == nil && req.Close {
+		err = info.Stdin.Close()
+	}
+
+	rsp := pb.ProcessInputWritten{Success: err == nil, Written: uint32(written)}
+	if err != nil {
+		rsp.Result = &pb.ProcessInputWritten_Error{Error: err.Error()}
+	} else {
+		rsp.Result = &pb.ProcessInputWritten_Status{Status: NewProcessStatusFromProcInfo(info)}
+	}
+
+	return &rsp, nil
 }
 
 func (s *Server) StreamLogs(req *pb.StreamLogsRequest, stream pb.VenomDaemon_StreamLogsServer) error {

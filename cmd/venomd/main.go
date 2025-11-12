@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"sync"
@@ -30,6 +32,10 @@ func main() {
 		sig := <-stopSignalCh
 		fmt.Printf(" got: %s\n", sig)
 		cancel()
+	}()
+
+	go func() {
+		http.ListenAndServe("localhost:6060", nil)
 	}()
 
 	pm := daemon.NewProcManager()

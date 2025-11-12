@@ -70,7 +70,7 @@ func (x LogEntry_Stream) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LogEntry_Stream.Descriptor instead.
 func (LogEntry_Stream) EnumDescriptor() ([]byte, []int) {
-	return file_api_venom_proto_rawDescGZIP(), []int{8, 0}
+	return file_api_venom_proto_rawDescGZIP(), []int{10, 0}
 }
 
 type ProcessDefinition struct {
@@ -292,14 +292,15 @@ func (x *ProcessInfo) GetStatus() *ProcessStatus {
 }
 
 type StartProcessRequest struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Definition *ProcessDefinition     `protobuf:"bytes,1,opt,name=definition,proto3" json:"definition,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Definition    *ProcessDefinition     `protobuf:"bytes,1,opt,name=definition,proto3" json:"definition,omitempty"`
+	WithStdinPipe bool                   `protobuf:"varint,2,opt,name=with_stdin_pipe,json=withStdinPipe,proto3" json:"with_stdin_pipe,omitempty"`
 	// Types that are valid to be assigned to WaitFor:
 	//
 	//	*StartProcessRequest_Regex
 	//	*StartProcessRequest_Exit
 	WaitFor       isStartProcessRequest_WaitFor `protobuf_oneof:"wait_for"`
-	WaitTimeout   *durationpb.Duration          `protobuf:"bytes,4,opt,name=wait_timeout,json=waitTimeout,proto3,oneof" json:"wait_timeout,omitempty"`
+	WaitTimeout   *durationpb.Duration          `protobuf:"bytes,5,opt,name=wait_timeout,json=waitTimeout,proto3,oneof" json:"wait_timeout,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -341,6 +342,13 @@ func (x *StartProcessRequest) GetDefinition() *ProcessDefinition {
 	return nil
 }
 
+func (x *StartProcessRequest) GetWithStdinPipe() bool {
+	if x != nil {
+		return x.WithStdinPipe
+	}
+	return false
+}
+
 func (x *StartProcessRequest) GetWaitFor() isStartProcessRequest_WaitFor {
 	if x != nil {
 		return x.WaitFor
@@ -378,11 +386,11 @@ type isStartProcessRequest_WaitFor interface {
 }
 
 type StartProcessRequest_Regex struct {
-	Regex string `protobuf:"bytes,2,opt,name=regex,proto3,oneof"`
+	Regex string `protobuf:"bytes,3,opt,name=regex,proto3,oneof"`
 }
 
 type StartProcessRequest_Exit struct {
-	Exit bool `protobuf:"varint,3,opt,name=exit,proto3,oneof"`
+	Exit bool `protobuf:"varint,4,opt,name=exit,proto3,oneof"`
 }
 
 func (*StartProcessRequest_Regex) isStartProcessRequest_WaitFor() {}
@@ -553,118 +561,6 @@ func (x *StopProcessResponse) GetStatus() *ProcessStatus {
 	return nil
 }
 
-type StreamLogsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	FromStart     bool                   `protobuf:"varint,2,opt,name=from_start,json=fromStart,proto3" json:"from_start,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *StreamLogsRequest) Reset() {
-	*x = StreamLogsRequest{}
-	mi := &file_api_venom_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *StreamLogsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*StreamLogsRequest) ProtoMessage() {}
-
-func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_venom_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
-func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
-	return file_api_venom_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *StreamLogsRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *StreamLogsRequest) GetFromStart() bool {
-	if x != nil {
-		return x.FromStart
-	}
-	return false
-}
-
-type LogEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ts            *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=ts,proto3" json:"ts,omitempty"`
-	Line          string                 `protobuf:"bytes,2,opt,name=line,proto3" json:"line,omitempty"`
-	Stream        LogEntry_Stream        `protobuf:"varint,3,opt,name=stream,proto3,enum=venom.LogEntry_Stream" json:"stream,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LogEntry) Reset() {
-	*x = LogEntry{}
-	mi := &file_api_venom_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LogEntry) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LogEntry) ProtoMessage() {}
-
-func (x *LogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_api_venom_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
-func (*LogEntry) Descriptor() ([]byte, []int) {
-	return file_api_venom_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *LogEntry) GetTs() *timestamppb.Timestamp {
-	if x != nil {
-		return x.Ts
-	}
-	return nil
-}
-
-func (x *LogEntry) GetLine() string {
-	if x != nil {
-		return x.Line
-	}
-	return ""
-}
-
-func (x *LogEntry) GetStream() LogEntry_Stream {
-	if x != nil {
-		return x.Stream
-	}
-	return LogEntry_STREAM_UNSPECIFIED
-}
-
 type ProcessInput struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -673,13 +569,14 @@ type ProcessInput struct {
 	//	*ProcessInput_Text
 	//	*ProcessInput_Data
 	Input         isProcessInput_Input `protobuf_oneof:"input"`
+	Close         bool                 `protobuf:"varint,4,opt,name=close,proto3" json:"close,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProcessInput) Reset() {
 	*x = ProcessInput{}
-	mi := &file_api_venom_proto_msgTypes[9]
+	mi := &file_api_venom_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -691,7 +588,7 @@ func (x *ProcessInput) String() string {
 func (*ProcessInput) ProtoMessage() {}
 
 func (x *ProcessInput) ProtoReflect() protoreflect.Message {
-	mi := &file_api_venom_proto_msgTypes[9]
+	mi := &file_api_venom_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -704,7 +601,7 @@ func (x *ProcessInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProcessInput.ProtoReflect.Descriptor instead.
 func (*ProcessInput) Descriptor() ([]byte, []int) {
-	return file_api_venom_proto_rawDescGZIP(), []int{9}
+	return file_api_venom_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ProcessInput) GetId() string {
@@ -739,6 +636,13 @@ func (x *ProcessInput) GetData() []byte {
 	return nil
 }
 
+func (x *ProcessInput) GetClose() bool {
+	if x != nil {
+		return x.Close
+	}
+	return false
+}
+
 type isProcessInput_Input interface {
 	isProcessInput_Input()
 }
@@ -755,6 +659,216 @@ func (*ProcessInput_Text) isProcessInput_Input() {}
 
 func (*ProcessInput_Data) isProcessInput_Input() {}
 
+type ProcessInputWritten struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Success bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Written uint32                 `protobuf:"varint,2,opt,name=written,proto3" json:"written,omitempty"`
+	// Types that are valid to be assigned to Result:
+	//
+	//	*ProcessInputWritten_Error
+	//	*ProcessInputWritten_Status
+	Result        isProcessInputWritten_Result `protobuf_oneof:"result"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProcessInputWritten) Reset() {
+	*x = ProcessInputWritten{}
+	mi := &file_api_venom_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProcessInputWritten) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProcessInputWritten) ProtoMessage() {}
+
+func (x *ProcessInputWritten) ProtoReflect() protoreflect.Message {
+	mi := &file_api_venom_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProcessInputWritten.ProtoReflect.Descriptor instead.
+func (*ProcessInputWritten) Descriptor() ([]byte, []int) {
+	return file_api_venom_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ProcessInputWritten) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ProcessInputWritten) GetWritten() uint32 {
+	if x != nil {
+		return x.Written
+	}
+	return 0
+}
+
+func (x *ProcessInputWritten) GetResult() isProcessInputWritten_Result {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+func (x *ProcessInputWritten) GetError() string {
+	if x != nil {
+		if x, ok := x.Result.(*ProcessInputWritten_Error); ok {
+			return x.Error
+		}
+	}
+	return ""
+}
+
+func (x *ProcessInputWritten) GetStatus() *ProcessStatus {
+	if x != nil {
+		if x, ok := x.Result.(*ProcessInputWritten_Status); ok {
+			return x.Status
+		}
+	}
+	return nil
+}
+
+type isProcessInputWritten_Result interface {
+	isProcessInputWritten_Result()
+}
+
+type ProcessInputWritten_Error struct {
+	Error string `protobuf:"bytes,3,opt,name=error,proto3,oneof"`
+}
+
+type ProcessInputWritten_Status struct {
+	Status *ProcessStatus `protobuf:"bytes,4,opt,name=status,proto3,oneof"`
+}
+
+func (*ProcessInputWritten_Error) isProcessInputWritten_Result() {}
+
+func (*ProcessInputWritten_Status) isProcessInputWritten_Result() {}
+
+type StreamLogsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	FromStart     bool                   `protobuf:"varint,2,opt,name=from_start,json=fromStart,proto3" json:"from_start,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamLogsRequest) Reset() {
+	*x = StreamLogsRequest{}
+	mi := &file_api_venom_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamLogsRequest) ProtoMessage() {}
+
+func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_venom_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
+func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
+	return file_api_venom_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *StreamLogsRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *StreamLogsRequest) GetFromStart() bool {
+	if x != nil {
+		return x.FromStart
+	}
+	return false
+}
+
+type LogEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ts            *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=ts,proto3" json:"ts,omitempty"`
+	Line          string                 `protobuf:"bytes,2,opt,name=line,proto3" json:"line,omitempty"`
+	Stream        LogEntry_Stream        `protobuf:"varint,3,opt,name=stream,proto3,enum=venom.LogEntry_Stream" json:"stream,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogEntry) Reset() {
+	*x = LogEntry{}
+	mi := &file_api_venom_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogEntry) ProtoMessage() {}
+
+func (x *LogEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_api_venom_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
+func (*LogEntry) Descriptor() ([]byte, []int) {
+	return file_api_venom_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *LogEntry) GetTs() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Ts
+	}
+	return nil
+}
+
+func (x *LogEntry) GetLine() string {
+	if x != nil {
+		return x.Line
+	}
+	return ""
+}
+
+func (x *LogEntry) GetStream() LogEntry_Stream {
+	if x != nil {
+		return x.Stream
+	}
+	return LogEntry_STREAM_UNSPECIFIED
+}
+
 type ListProcessesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Processes     []*ProcessInfo         `protobuf:"bytes,1,rep,name=processes,proto3" json:"processes,omitempty"`
@@ -764,7 +878,7 @@ type ListProcessesResponse struct {
 
 func (x *ListProcessesResponse) Reset() {
 	*x = ListProcessesResponse{}
-	mi := &file_api_venom_proto_msgTypes[10]
+	mi := &file_api_venom_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +890,7 @@ func (x *ListProcessesResponse) String() string {
 func (*ListProcessesResponse) ProtoMessage() {}
 
 func (x *ListProcessesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_venom_proto_msgTypes[10]
+	mi := &file_api_venom_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +903,7 @@ func (x *ListProcessesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProcessesResponse.ProtoReflect.Descriptor instead.
 func (*ListProcessesResponse) Descriptor() ([]byte, []int) {
-	return file_api_venom_proto_rawDescGZIP(), []int{10}
+	return file_api_venom_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListProcessesResponse) GetProcesses() []*ProcessInfo {
@@ -812,7 +926,7 @@ type MetricsResponse struct {
 
 func (x *MetricsResponse) Reset() {
 	*x = MetricsResponse{}
-	mi := &file_api_venom_proto_msgTypes[11]
+	mi := &file_api_venom_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -824,7 +938,7 @@ func (x *MetricsResponse) String() string {
 func (*MetricsResponse) ProtoMessage() {}
 
 func (x *MetricsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_venom_proto_msgTypes[11]
+	mi := &file_api_venom_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -837,7 +951,7 @@ func (x *MetricsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsResponse.ProtoReflect.Descriptor instead.
 func (*MetricsResponse) Descriptor() ([]byte, []int) {
-	return file_api_venom_proto_rawDescGZIP(), []int{11}
+	return file_api_venom_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MetricsResponse) GetTs() *timestamppb.Timestamp {
@@ -895,14 +1009,15 @@ const file_api_venom_proto_rawDesc = "" +
 	"\n" +
 	"definition\x18\x02 \x01(\v2\x18.venom.ProcessDefinitionR\n" +
 	"definition\x12,\n" +
-	"\x06status\x18\x03 \x01(\v2\x14.venom.ProcessStatusR\x06status\"\xdd\x01\n" +
+	"\x06status\x18\x03 \x01(\v2\x14.venom.ProcessStatusR\x06status\"\x85\x02\n" +
 	"\x13StartProcessRequest\x128\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2\x18.venom.ProcessDefinitionR\n" +
-	"definition\x12\x16\n" +
-	"\x05regex\x18\x02 \x01(\tH\x00R\x05regex\x12\x14\n" +
-	"\x04exit\x18\x03 \x01(\bH\x00R\x04exit\x12A\n" +
-	"\fwait_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationH\x01R\vwaitTimeout\x88\x01\x01B\n" +
+	"definition\x12&\n" +
+	"\x0fwith_stdin_pipe\x18\x02 \x01(\bR\rwithStdinPipe\x12\x16\n" +
+	"\x05regex\x18\x03 \x01(\tH\x00R\x05regex\x12\x14\n" +
+	"\x04exit\x18\x04 \x01(\bH\x00R\x04exit\x12A\n" +
+	"\fwait_timeout\x18\x05 \x01(\v2\x19.google.protobuf.DurationH\x01R\vwaitTimeout\x88\x01\x01B\n" +
 	"\n" +
 	"\bwait_forB\x0f\n" +
 	"\r_wait_timeout\"n\n" +
@@ -915,7 +1030,19 @@ const file_api_venom_proto_rawDesc = "" +
 	"\x04wait\x18\x02 \x01(\bR\x04wait\"]\n" +
 	"\x13StopProcessResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12,\n" +
-	"\x06status\x18\x02 \x01(\v2\x14.venom.ProcessStatusR\x06status\"B\n" +
+	"\x06status\x18\x02 \x01(\v2\x14.venom.ProcessStatusR\x06status\"i\n" +
+	"\fProcessInput\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x04text\x18\x02 \x01(\tH\x00R\x04text\x12\x14\n" +
+	"\x04data\x18\x03 \x01(\fH\x00R\x04data\x12\x14\n" +
+	"\x05close\x18\x04 \x01(\bR\x05closeB\a\n" +
+	"\x05input\"\x9b\x01\n" +
+	"\x13ProcessInputWritten\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\awritten\x18\x02 \x01(\rR\awritten\x12\x16\n" +
+	"\x05error\x18\x03 \x01(\tH\x00R\x05error\x12.\n" +
+	"\x06status\x18\x04 \x01(\v2\x14.venom.ProcessStatusH\x00R\x06statusB\b\n" +
+	"\x06result\"B\n" +
 	"\x11StreamLogsRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -929,12 +1056,7 @@ const file_api_venom_proto_rawDesc = "" +
 	"\n" +
 	"\x06STDOUT\x10\x01\x12\n" +
 	"\n" +
-	"\x06STDERR\x10\x02\"S\n" +
-	"\fProcessInput\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
-	"\x04text\x18\x02 \x01(\tH\x00R\x04text\x12\x14\n" +
-	"\x04data\x18\x03 \x01(\fH\x00R\x04dataB\a\n" +
-	"\x05input\"I\n" +
+	"\x06STDERR\x10\x02\"I\n" +
 	"\x15ListProcessesResponse\x120\n" +
 	"\tprocesses\x18\x01 \x03(\v2\x12.venom.ProcessInfoR\tprocesses\"\xb7\x01\n" +
 	"\x0fMetricsResponse\x12*\n" +
@@ -944,10 +1066,11 @@ const file_api_venom_proto_rawDesc = "" +
 	"\vmem_percent\x18\x03 \x01(\x01R\n" +
 	"memPercent\x12\x1b\n" +
 	"\tmem_total\x18\x04 \x01(\x04R\bmemTotal\x12\x19\n" +
-	"\bmem_used\x18\x05 \x01(\x04R\amemUsed2\xdc\x02\n" +
+	"\bmem_used\x18\x05 \x01(\x04R\amemUsed2\xa1\x03\n" +
 	"\vVenomDaemon\x12G\n" +
 	"\fStartProcess\x12\x1a.venom.StartProcessRequest\x1a\x1b.venom.StartProcessResponse\x12D\n" +
-	"\vStopProcess\x12\x19.venom.StopProcessRequest\x1a\x1a.venom.StopProcessResponse\x12E\n" +
+	"\vStopProcess\x12\x19.venom.StopProcessRequest\x1a\x1a.venom.StopProcessResponse\x12C\n" +
+	"\x10SendProcessInput\x12\x13.venom.ProcessInput\x1a\x1a.venom.ProcessInputWritten\x12E\n" +
 	"\rListProcesses\x12\x16.google.protobuf.Empty\x1a\x1c.venom.ListProcessesResponse\x129\n" +
 	"\n" +
 	"StreamLogs\x12\x18.venom.StreamLogsRequest\x1a\x0f.venom.LogEntry0\x01\x12<\n" +
@@ -967,7 +1090,7 @@ func file_api_venom_proto_rawDescGZIP() []byte {
 }
 
 var file_api_venom_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_api_venom_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_api_venom_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_api_venom_proto_goTypes = []any{
 	(LogEntry_Stream)(0),          // 0: venom.LogEntry.Stream
 	(*ProcessDefinition)(nil),     // 1: venom.ProcessDefinition
@@ -977,42 +1100,46 @@ var file_api_venom_proto_goTypes = []any{
 	(*StartProcessResponse)(nil),  // 5: venom.StartProcessResponse
 	(*StopProcessRequest)(nil),    // 6: venom.StopProcessRequest
 	(*StopProcessResponse)(nil),   // 7: venom.StopProcessResponse
-	(*StreamLogsRequest)(nil),     // 8: venom.StreamLogsRequest
-	(*LogEntry)(nil),              // 9: venom.LogEntry
-	(*ProcessInput)(nil),          // 10: venom.ProcessInput
-	(*ListProcessesResponse)(nil), // 11: venom.ListProcessesResponse
-	(*MetricsResponse)(nil),       // 12: venom.MetricsResponse
-	(*durationpb.Duration)(nil),   // 13: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),         // 15: google.protobuf.Empty
+	(*ProcessInput)(nil),          // 8: venom.ProcessInput
+	(*ProcessInputWritten)(nil),   // 9: venom.ProcessInputWritten
+	(*StreamLogsRequest)(nil),     // 10: venom.StreamLogsRequest
+	(*LogEntry)(nil),              // 11: venom.LogEntry
+	(*ListProcessesResponse)(nil), // 12: venom.ListProcessesResponse
+	(*MetricsResponse)(nil),       // 13: venom.MetricsResponse
+	(*durationpb.Duration)(nil),   // 14: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),         // 16: google.protobuf.Empty
 }
 var file_api_venom_proto_depIdxs = []int32{
-	13, // 0: venom.ProcessStatus.runtime:type_name -> google.protobuf.Duration
+	14, // 0: venom.ProcessStatus.runtime:type_name -> google.protobuf.Duration
 	1,  // 1: venom.ProcessInfo.definition:type_name -> venom.ProcessDefinition
 	2,  // 2: venom.ProcessInfo.status:type_name -> venom.ProcessStatus
 	1,  // 3: venom.StartProcessRequest.definition:type_name -> venom.ProcessDefinition
-	13, // 4: venom.StartProcessRequest.wait_timeout:type_name -> google.protobuf.Duration
+	14, // 4: venom.StartProcessRequest.wait_timeout:type_name -> google.protobuf.Duration
 	2,  // 5: venom.StartProcessResponse.status:type_name -> venom.ProcessStatus
 	2,  // 6: venom.StopProcessResponse.status:type_name -> venom.ProcessStatus
-	14, // 7: venom.LogEntry.ts:type_name -> google.protobuf.Timestamp
-	0,  // 8: venom.LogEntry.stream:type_name -> venom.LogEntry.Stream
-	3,  // 9: venom.ListProcessesResponse.processes:type_name -> venom.ProcessInfo
-	14, // 10: venom.MetricsResponse.ts:type_name -> google.protobuf.Timestamp
-	4,  // 11: venom.VenomDaemon.StartProcess:input_type -> venom.StartProcessRequest
-	6,  // 12: venom.VenomDaemon.StopProcess:input_type -> venom.StopProcessRequest
-	15, // 13: venom.VenomDaemon.ListProcesses:input_type -> google.protobuf.Empty
-	8,  // 14: venom.VenomDaemon.StreamLogs:input_type -> venom.StreamLogsRequest
-	15, // 15: venom.VenomDaemon.GetMetrics:input_type -> google.protobuf.Empty
-	5,  // 16: venom.VenomDaemon.StartProcess:output_type -> venom.StartProcessResponse
-	7,  // 17: venom.VenomDaemon.StopProcess:output_type -> venom.StopProcessResponse
-	11, // 18: venom.VenomDaemon.ListProcesses:output_type -> venom.ListProcessesResponse
-	9,  // 19: venom.VenomDaemon.StreamLogs:output_type -> venom.LogEntry
-	12, // 20: venom.VenomDaemon.GetMetrics:output_type -> venom.MetricsResponse
-	16, // [16:21] is the sub-list for method output_type
-	11, // [11:16] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	2,  // 7: venom.ProcessInputWritten.status:type_name -> venom.ProcessStatus
+	15, // 8: venom.LogEntry.ts:type_name -> google.protobuf.Timestamp
+	0,  // 9: venom.LogEntry.stream:type_name -> venom.LogEntry.Stream
+	3,  // 10: venom.ListProcessesResponse.processes:type_name -> venom.ProcessInfo
+	15, // 11: venom.MetricsResponse.ts:type_name -> google.protobuf.Timestamp
+	4,  // 12: venom.VenomDaemon.StartProcess:input_type -> venom.StartProcessRequest
+	6,  // 13: venom.VenomDaemon.StopProcess:input_type -> venom.StopProcessRequest
+	8,  // 14: venom.VenomDaemon.SendProcessInput:input_type -> venom.ProcessInput
+	16, // 15: venom.VenomDaemon.ListProcesses:input_type -> google.protobuf.Empty
+	10, // 16: venom.VenomDaemon.StreamLogs:input_type -> venom.StreamLogsRequest
+	16, // 17: venom.VenomDaemon.GetMetrics:input_type -> google.protobuf.Empty
+	5,  // 18: venom.VenomDaemon.StartProcess:output_type -> venom.StartProcessResponse
+	7,  // 19: venom.VenomDaemon.StopProcess:output_type -> venom.StopProcessResponse
+	9,  // 20: venom.VenomDaemon.SendProcessInput:output_type -> venom.ProcessInputWritten
+	12, // 21: venom.VenomDaemon.ListProcesses:output_type -> venom.ListProcessesResponse
+	11, // 22: venom.VenomDaemon.StreamLogs:output_type -> venom.LogEntry
+	13, // 23: venom.VenomDaemon.GetMetrics:output_type -> venom.MetricsResponse
+	18, // [18:24] is the sub-list for method output_type
+	12, // [12:18] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_api_venom_proto_init() }
@@ -1028,9 +1155,13 @@ func file_api_venom_proto_init() {
 		(*StartProcessRequest_Regex)(nil),
 		(*StartProcessRequest_Exit)(nil),
 	}
-	file_api_venom_proto_msgTypes[9].OneofWrappers = []any{
+	file_api_venom_proto_msgTypes[7].OneofWrappers = []any{
 		(*ProcessInput_Text)(nil),
 		(*ProcessInput_Data)(nil),
+	}
+	file_api_venom_proto_msgTypes[8].OneofWrappers = []any{
+		(*ProcessInputWritten_Error)(nil),
+		(*ProcessInputWritten_Status)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1038,7 +1169,7 @@ func file_api_venom_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_venom_proto_rawDesc), len(file_api_venom_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

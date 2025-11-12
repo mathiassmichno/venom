@@ -10,6 +10,7 @@ import "google/protobuf/timestamp.proto";
 service VenomDaemon {
   rpc StartProcess(StartProcessRequest) returns (StartProcessResponse);
   rpc StopProcess(StopProcessRequest) returns (StopProcessResponse);
+  rpc SendProcessInput(ProcessInput) returns (ProcessInputWritten);
   rpc ListProcesses(google.protobuf.Empty) returns (ListProcessesResponse);
   rpc StreamLogs(StreamLogsRequest) returns (stream LogEntry);
   rpc GetMetrics(google.protobuf.Empty) returns (MetricsResponse);
@@ -38,11 +39,12 @@ message ProcessInfo {
 
 message StartProcessRequest {
   ProcessDefinition definition = 1;
+  bool with_stdin_pipe = 2;
   oneof wait_for {
-    string regex = 2;
-    bool exit = 3;
+    string regex = 3;
+    bool exit = 4;
   }
-  optional google.protobuf.Duration wait_timeout = 4;
+  optional google.protobuf.Duration wait_timeout = 5;
 }
 
 message StartProcessResponse {
@@ -61,6 +63,24 @@ message StopProcessResponse {
   ProcessStatus status = 2;
 }
 
+message ProcessInput {
+  string id = 1;
+  oneof input {
+    string text = 2;
+    bytes data = 3;
+  }
+  bool close = 4;
+}
+
+message ProcessInputWritten {
+  bool success = 1;
+  uint32 written = 2;
+  oneof result {
+    string error = 3;
+    ProcessStatus status = 4;
+  }
+}
+
 message StreamLogsRequest {
   string id = 1;
   bool from_start = 2;
@@ -75,14 +95,6 @@ message LogEntry {
     STREAM_UNSPECIFIED = 0; // Default value.
     STDOUT = 1;             // Standard output.
     STDERR = 2;             // Standard error.
-  }
-}
-
-message ProcessInput {
-  string id = 1;
-  oneof input {
-    string text = 2;
-    bytes data = 3;
   }
 }
 

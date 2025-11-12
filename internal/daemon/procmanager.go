@@ -3,9 +3,11 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,9 +16,9 @@ import (
 )
 
 type ProcInfo struct {
-	ID  string
-	Cmd *cmd.Cmd
-
+	ID    string
+	Cmd   *cmd.Cmd
+	Stdin *io.PipeWriter
 	sync.RWMutex
 	logSubs map[chan LogEntry]struct{}
 }
@@ -31,12 +33,13 @@ func NewProcManager() *ProcManager {
 }
 
 type ProcStartOptions struct {
-	Cwd          string
-	Dir          string
-	Env          []string
-	WaitForExit  bool
-	WaitForRegex *regexp.Regexp
-	WaitTimeout  *time.Duration
+	Cwd           string
+	Dir           string
+	Env           []string
+	WithStdinPipe bool
+	WaitForExit   bool
+	WaitForRegex  *regexp.Regexp
+	WaitTimeout   *time.Duration
 }
 
 type LogEntry struct {
@@ -66,9 +69,7 @@ func (p *ProcInfo) PublishLine(stream Stream, line string) {
 func (p *ProcInfo) Subscribe() chan LogEntry {
 	ch := make(chan LogEntry, 200)
 	slog.Info("subscribing", "ch", ch, "id", p.ID, "name", p.Cmd.Name)
-
 	p.Lock()
-	slog.Info("locked proc")
 	defer p.Unlock()
 
 	go func(bufferedLines []string) {
@@ -79,9 +80,7 @@ func (p *ProcInfo) Subscribe() chan LogEntry {
 				stream: StreamNONE,
 				line:   line,
 			}:
-				slog.Info("sent buffered line", "id", p.ID, "line", line)
 			default:
-				slog.Info("DEFAULTED!", "id", p.ID, "line", line)
 			}
 		}
 	}(append([]string(nil), p.Cmd.Status().Stdout...))
@@ -109,8 +108,8 @@ func (p *ProcInfo) DumpToFile(path string) error {
 		return err
 	}
 
-	p.RLock()
-	defer p.RUnlock()
+	p.Lock()
+	defer p.Unlock()
 
 	// TODO: Stderr???
 	for _, line := range p.Cmd.Status().Stdout {
@@ -126,6 +125,13 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 	slog.Info("starting process", "id", id, "name", name, "args", args, "opts", opts)
 	defer slog.Info("started process", "id", id)
 
+	var stdinReader io.Reader
+	var stdinWriter *io.PipeWriter
+	if opts.WithStdinPipe {
+		stdinReader, stdinWriter = io.Pipe()
+	} else {
+		stdinReader = strings.NewReader("")
+	}
 	command := cmd.NewCmdOptions(cmd.Options{
 		Buffered:       true,
 		Streaming:      true,
@@ -135,12 +141,13 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 	command.Dir = opts.Cwd
 	command.Env = append(command.Env, opts.Env...)
 
-	statusCh := command.Start()
+	statusCh := command.StartWithStdin(stdinReader)
 
 	info := &ProcInfo{
 		ID:      id,
 		Cmd:     command,
 		logSubs: make(map[chan LogEntry]struct{}),
+		Stdin:   stdinWriter,
 	}
 
 	pm.Lock()
@@ -153,6 +160,7 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 	matchCh := make(chan struct{})
 	matched := false
 
+	// Go routine for forwarding stdout/err to log subs and potentially matching regex
 	go func() {
 		for command.Stdout != nil || command.Stderr != nil {
 			var line string
@@ -190,9 +198,18 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 		if opts.WaitTimeout != nil {
 			timeout = *opts.WaitTimeout
 		}
+		if opts.WaitForExit && info.Stdin != nil {
+			slog.Warn("waiting for process exit but has stdin pipe. Closing pipe", "id", info.ID)
+			if err := info.Stdin.Close(); err != nil {
+				return info, err
+			}
+		}
 		select {
 		case status := <-statusCh:
 			slog.Info("process exited", "id", id, "status", status)
+			if !opts.WaitForExit {
+				return info, fmt.Errorf("process exited before matching '%v'", opts.WaitForRegex.String())
+			}
 		case <-matchCh:
 		case <-time.After(timeout):
 			return info, fmt.Errorf("timeout while waiting")
