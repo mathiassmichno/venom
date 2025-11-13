@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 
@@ -80,6 +81,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "cwd", Usage: "working directory"},
 					&cli.StringSliceFlag{Name: "env", Usage: "envvar \"name=value\" (can repeat)"},
+					&cli.BoolFlag{Name: "with-stdin", Usage: "use stdin pipe - enabled process input later"},
 					&cli.DurationFlag{Name: "wait-timeout", Usage: "timeout while waiting", Value: 10 * time.Second},
 					&cli.BoolFlag{Name: "wait-for-exit", Usage: "wait for the started process to exit"},
 					&cli.StringFlag{Name: "wait-for-regex", Usage: "wait for the output of the started process to match regex"},
@@ -105,16 +107,23 @@ func main() {
 					defer conn.Close()
 
 					req := &pb.StartProcessRequest{
-						Definition: &pb.ProcessDefinition{Name: name, Args: args, Dir: dir, Env: env},
+						Definition: &pb.ProcessDefinition{
+							Name: name,
+							Args: args,
+							Dir:  dir,
+							Env:  env,
+						},
+						WithStdinPipe: cmd.Bool("with-stdin"),
 					}
 					if cmd.Bool("wait-for-exit") {
 						req.WaitFor = &pb.StartProcessRequest_Exit{Exit: true}
 					} else if regexStr := cmd.String("wait-for-regex"); regexStr != "" {
-						if _, err := regexp.Compile(regexStr); err != nil {
+						if _, err = regexp.Compile(regexStr); err != nil {
 							cli.Exit(fmt.Sprintf("wait-for-regex is not a valid regex: %s", err.Error()), 1)
 						}
 						req.WaitFor = &pb.StartProcessRequest_Regex{Regex: regexStr}
 					}
+
 					var rsp *pb.StartProcessResponse
 					rsp, err = cmdent.StartProcess(ctx, req)
 					if err != nil {
@@ -128,11 +137,11 @@ func main() {
 				Name:      "stop",
 				Usage:     "Stop a running process",
 				ArgsUsage: "<id>",
-				Action: func(ctx context.Context, cli *cli.Command) error {
-					if cli.NArg() != 1 {
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					if cmd.NArg() != 1 {
 						return fmt.Errorf("id required")
 					}
-					id := cli.Args().Get(0)
+					id := cmd.Args().Get(0)
 					ctx, cancel := context.WithTimeout(ctx, timeout)
 					defer cancel()
 					conn, client, err := dial()
@@ -151,14 +160,50 @@ func main() {
 				},
 			},
 			{
+				Name:      "input",
+				Usage:     "Send input to a process",
+				ArgsUsage: "<id> <input string>",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "close-stdin", Aliases: []string{"c"}, Usage: "Close stdin after sending input"},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					if cmd.NArg() < 1 {
+						return fmt.Errorf("id required")
+					}
+					id := cmd.Args().First()
+					input := strings.Join(cmd.Args().Tail(), "") + "\n"
+					ctx, cancel := context.WithTimeout(ctx, timeout)
+					defer cancel()
+					conn, client, err := dial()
+					if err != nil {
+						return err
+					}
+					defer conn.Close()
+
+					var rsp *pb.ProcessInputWritten
+					rsp, err = client.SendProcessInput(
+						ctx,
+						&pb.ProcessInput{
+							Id:    id,
+							Input: &pb.ProcessInput_Text{Text: input},
+							Close: cmd.Bool("close-stdin"),
+						})
+					if err != nil {
+						return err
+					}
+					fmt.Println(rsp.Result)
+					return nil
+				},
+			},
+			{
 				Name:      "logs",
 				Usage:     "Stream logs for a process (stdout/stderr)",
 				ArgsUsage: "<id>",
-				Action: func(ctx context.Context, cli *cli.Command) error {
-					if cli.NArg() != 1 {
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					if cmd.NArg() != 1 {
 						return fmt.Errorf("id required")
 					}
-					id := cli.Args().First()
+					id := cmd.Args().First()
 					conn, client, err := dial()
 					if err != nil {
 						return err
