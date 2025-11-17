@@ -95,9 +95,7 @@ func (p *ProcInfo) Unsubscribe(ch chan LogEntry) {
 	slog.Info("unsubscribing", "ch", ch, "id", p.ID, "name", p.Cmd.Name)
 	p.Lock()
 	delete(p.logSubs, ch)
-	if _, ok := <-ch; ok {
-		close(ch)
-	}
+	close(ch)
 	p.Unlock()
 }
 
@@ -230,22 +228,27 @@ func (pm *ProcManager) Stop(id string, wait bool) (*ProcInfo, error) {
 	}
 	err := p.Cmd.Stop()
 	if wait {
-		<-p.Cmd.Done()
+		select {
+		case <-p.Cmd.Done():
+		case <-time.After(10 * time.Second):
+			slog.Warn("timed out while stopping", "id", id, "status", p.Cmd.Status())
+		}
 	}
 	return p, err
 }
 
 func (pm *ProcManager) Shutdown() error {
+	slog.Info("shutting down process manager", "processes", pm.Procs)
 	pm.Lock()
 	defer pm.Unlock()
 	var errs []error
 
-	slog.Info("shutting down process manager", "processes", pm.Procs)
-	for _, p := range pm.Procs {
+	for id, p := range pm.Procs {
 		slog.Info("stopping process", "id", p.ID)
 		if err := p.Cmd.Stop(); err != nil {
 			errs = append(errs, err)
 		}
+		delete(pm.Procs, id)
 	}
 
 	if len(errs) > 0 {
