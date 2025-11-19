@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +21,9 @@ type ProcInfo struct {
 	Cmd   *cmd.Cmd
 	Stdin *io.PipeWriter
 	sync.RWMutex
-	logSubs map[chan LogEntry]struct{}
+	logSubs   map[chan LogEntry]struct{}
+	logFile   *bufio.Writer
+	logPrefix bool
 }
 
 type ProcManager struct {
@@ -40,6 +43,10 @@ type ProcStartOptions struct {
 	WaitForExit   bool
 	WaitForRegex  *regexp.Regexp
 	WaitTimeout   *time.Duration
+
+	// Options related to logfile not streamed log entries
+	LogInfoPrefix bool // Prefix loglines with timestamp and stream origin (stderr, stdout)
+	LogEchoStdin  bool // Echo stdin lines to logfile
 }
 
 type LogEntry struct {
@@ -56,13 +63,33 @@ const (
 	StreamSTDERR
 )
 
+func (s Stream) String() string {
+	switch s {
+	case StreamSTDERR:
+		return "stderr"
+	case StreamSTDOUT:
+		return "stdout"
+	default:
+		return ""
+	}
+}
+
 func (p *ProcInfo) PublishLine(stream Stream, line string) {
 	ts := time.Now()
+	p.Lock()
+	defer p.Unlock()
 	for ch := range p.logSubs {
 		select {
 		case ch <- LogEntry{ts: ts, line: line, stream: stream}:
 		default:
 		}
+	}
+	var prefix string
+	if p.logPrefix {
+		prefix = fmt.Sprintf("[%6s] %s: ", stream.String(), ts.Format(time.DateTime))
+	}
+	if _, err := p.logFile.WriteString(prefix + line + "\n"); err != nil {
+		slog.Warn("failed to write logline to logfile", "id", p.ID, "err", err.Error())
 	}
 }
 
@@ -99,30 +126,15 @@ func (p *ProcInfo) Unsubscribe(ch chan LogEntry) {
 	p.Unlock()
 }
 
-// DumpToFile writes the entire buffer to a file.
-func (p *ProcInfo) DumpToFile(path string) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-
-	p.Lock()
-	defer p.Unlock()
-
-	// TODO: Stderr???
-	for _, line := range p.Cmd.Status().Stdout {
-		if _, err := f.WriteString(line + "\n"); err != nil {
-			return err
-		}
-	}
-	return f.Close()
-}
-
 func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) (*ProcInfo, error) {
 	id := uuid.NewString()
 	slog.Info("starting process", "id", id, "name", name, "args", args, "opts", opts)
 	defer slog.Info("started process", "id", id)
 
+	logFile, err := os.Create(id + ".log")
+	if err != nil {
+		slog.Warn("unable to open logfile", "err", err.Error())
+	}
 	var stdinReader io.Reader
 	var stdinWriter *io.PipeWriter
 	if opts.WithStdinPipe {
@@ -142,10 +154,12 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 	statusCh := command.StartWithStdin(stdinReader)
 
 	info := &ProcInfo{
-		ID:      id,
-		Cmd:     command,
-		logSubs: make(map[chan LogEntry]struct{}),
-		Stdin:   stdinWriter,
+		ID:        id,
+		Cmd:       command,
+		logSubs:   make(map[chan LogEntry]struct{}),
+		Stdin:     stdinWriter,
+		logFile:   bufio.NewWriterSize(logFile, 64*1024),
+		logPrefix: opts.LogInfoPrefix,
 	}
 
 	pm.Lock()
@@ -188,6 +202,12 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 		defer info.Unlock()
 		for ch := range info.logSubs {
 			close(ch)
+		}
+		if err := info.logFile.Flush(); err != nil {
+			slog.Warn("failed to flush log buffer", "id", id, "err", err.Error())
+		}
+		if err := logFile.Close(); err != nil {
+			slog.Warn("failed to close log file", "id", id, "err", err.Error())
 		}
 	}()
 
@@ -234,6 +254,7 @@ func (pm *ProcManager) Stop(id string, wait bool) (*ProcInfo, error) {
 			slog.Warn("timed out while stopping", "id", id, "status", p.Cmd.Status())
 		}
 	}
+	p.CloseLogFile()
 	return p, err
 }
 

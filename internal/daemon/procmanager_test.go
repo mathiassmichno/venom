@@ -9,9 +9,23 @@ import (
 )
 
 func TestProcessStart(t *testing.T) {
-	info, err := NewProcManager().Start("cat", []string{}, ProcStartOptions{WaitForExit: false, WithStdinPipe: true})
+	info, err := NewProcManager().Start(
+		"cat",
+		[]string{},
+		ProcStartOptions{
+			WaitForExit:   false,
+			WithStdinPipe: true,
+			LogInfoPrefix: true,
+		},
+	)
 	if info.Stdin != nil {
-		written, err := io.WriteString(info.Stdin, "test\n")
+		var written int
+		var err error
+		written, err = io.WriteString(info.Stdin, "test\n")
+		t.Logf("written: %v err: %v", written, err)
+		written, err = io.WriteString(info.Stdin, "test2\n")
+		t.Logf("written: %v err: %v", written, err)
+		written, err = io.WriteString(info.Stdin, "test3\n")
 		t.Logf("written: %v err: %v", written, err)
 		err = info.Stdin.Close()
 		if err != nil {
