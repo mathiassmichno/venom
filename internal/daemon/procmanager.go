@@ -21,6 +21,7 @@ type ProcInfo struct {
 	Cmd   *cmd.Cmd
 	Stdin *io.PipeWriter
 	sync.RWMutex
+	ioDone    chan struct{}
 	logSubs   map[chan LogEntry]struct{}
 	logFile   *bufio.Writer
 	logPrefix bool
@@ -160,6 +161,7 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 		Stdin:     stdinWriter,
 		logFile:   bufio.NewWriterSize(logFile, 64*1024),
 		logPrefix: opts.LogInfoPrefix,
+		ioDone:    make(chan struct{}),
 	}
 
 	pm.Lock()
@@ -209,6 +211,7 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 		if err := logFile.Close(); err != nil {
 			slog.Warn("failed to close log file", "id", id, "err", err.Error())
 		}
+		close(info.ioDone)
 	}()
 
 	if opts.WaitForExit || opts.WaitForRegex != nil {
@@ -249,12 +252,11 @@ func (pm *ProcManager) Stop(id string, wait bool) (*ProcInfo, error) {
 	err := p.Cmd.Stop()
 	if wait {
 		select {
-		case <-p.Cmd.Done():
+		case <-p.ioDone:
 		case <-time.After(10 * time.Second):
 			slog.Warn("timed out while stopping", "id", id, "status", p.Cmd.Status())
 		}
 	}
-	p.CloseLogFile()
 	return p, err
 }
 
@@ -269,6 +271,7 @@ func (pm *ProcManager) Shutdown() error {
 		if err := p.Cmd.Stop(); err != nil {
 			errs = append(errs, err)
 		}
+		<-p.ioDone
 		delete(pm.Procs, id)
 	}
 
