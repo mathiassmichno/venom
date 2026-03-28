@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-cmd/cmd"
@@ -24,6 +25,7 @@ type ProcInfo struct {
 	ioDone    chan struct{}
 	logSubs   map[chan LogEntry]struct{}
 	logFile   *bufio.Writer
+	logFileMu sync.Mutex
 	logPrefix bool
 }
 
@@ -45,9 +47,8 @@ type ProcStartOptions struct {
 	WaitForRegex  *regexp.Regexp
 	WaitTimeout   *time.Duration
 
-	// Options related to logfile not streamed log entries
-	LogInfoPrefix bool // Prefix loglines with timestamp and stream origin (stderr, stdout)
-	LogEchoStdin  bool // Echo stdin lines to logfile
+	LogInfoPrefix bool
+	LogEchoStdin  bool
 }
 
 type LogEntry struct {
@@ -78,20 +79,28 @@ func (s Stream) String() string {
 func (p *ProcInfo) PublishLine(stream Stream, line string) {
 	ts := time.Now()
 	p.Lock()
-	defer p.Unlock()
 	for ch := range p.logSubs {
 		select {
 		case ch <- LogEntry{ts: ts, line: line, stream: stream}:
 		default:
 		}
 	}
+	p.Unlock()
+
+	if p.logFile == nil {
+		return
+	}
 	var prefix string
 	if p.logPrefix {
 		prefix = fmt.Sprintf("[%6s] %s: ", stream.String(), ts.Format(time.DateTime))
 	}
-	if _, err := p.logFile.WriteString(prefix + line + "\n"); err != nil {
-		slog.Warn("failed to write logline to logfile", "id", p.ID, "err", err.Error())
+	p.logFileMu.Lock()
+	if p.logFile != nil {
+		if _, err := p.logFile.WriteString(prefix + line + "\n"); err != nil {
+			slog.Warn("failed to write logline to logfile", "id", p.ID, "err", err.Error())
+		}
 	}
+	p.logFileMu.Unlock()
 }
 
 func (p *ProcInfo) Subscribe() chan LogEntry {
@@ -100,7 +109,17 @@ func (p *ProcInfo) Subscribe() chan LogEntry {
 	p.Lock()
 	defer p.Unlock()
 
+	if p.logSubs == nil {
+		close(ch)
+		return ch
+	}
+
 	go func(bufferedLines []string) {
+		defer func() {
+			if r := recover(); r != nil {
+				// Channel was closed, ignore
+			}
+		}()
 		for _, line := range bufferedLines {
 			select {
 			case ch <- LogEntry{
@@ -118,13 +137,15 @@ func (p *ProcInfo) Subscribe() chan LogEntry {
 	return ch
 }
 
-// Unsubscribe removes a subscription.
 func (p *ProcInfo) Unsubscribe(ch chan LogEntry) {
 	slog.Info("unsubscribing", "ch", ch, "id", p.ID, "name", p.Cmd.Name)
 	p.Lock()
+	defer p.Unlock()
+
+	if p.logSubs == nil {
+		return
+	}
 	delete(p.logSubs, ch)
-	close(ch)
-	p.Unlock()
 }
 
 func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) (*ProcInfo, error) {
@@ -134,7 +155,7 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 
 	logFile, err := os.Create(id + ".log")
 	if err != nil {
-		slog.Warn("unable to open logfile", "err", err.Error())
+		slog.Warn("unable to open logfile, logging disabled", "id", id, "err", err.Error())
 	}
 	var stdinReader io.Reader
 	var stdinWriter *io.PipeWriter
@@ -154,12 +175,17 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 
 	statusCh := command.StartWithStdin(stdinReader)
 
+	var logWriter *bufio.Writer
+	if logFile != nil {
+		logWriter = bufio.NewWriterSize(logFile, 64*1024)
+	}
+
 	info := &ProcInfo{
 		ID:        id,
 		Cmd:       command,
 		logSubs:   make(map[chan LogEntry]struct{}),
 		Stdin:     stdinWriter,
-		logFile:   bufio.NewWriterSize(logFile, 64*1024),
+		logFile:   logWriter,
 		logPrefix: opts.LogInfoPrefix,
 		ioDone:    make(chan struct{}),
 	}
@@ -172,10 +198,24 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 	pm.Unlock()
 
 	matchCh := make(chan struct{})
-	matched := false
+	var matched atomic.Bool
 
-	// Go routine for forwarding stdout/err to log subs and potentially matching regex
 	go func() {
+		defer func() {
+			info.logFileMu.Lock()
+			if info.logFile != nil {
+				if flushErr := info.logFile.Flush(); flushErr != nil {
+					slog.Warn("failed to flush log buffer", "id", id, "err", flushErr.Error())
+				}
+			}
+			info.logFileMu.Unlock()
+
+			if err := logFile.Close(); err != nil {
+				slog.Warn("failed to close log file", "id", id, "err", err.Error())
+			}
+			close(info.ioDone)
+		}()
+
 		for command.Stdout != nil || command.Stderr != nil {
 			var line string
 			var open bool
@@ -192,26 +232,21 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 					command.Stderr = nil
 				}
 			}
-			if opts.WaitForRegex != nil && !matched && opts.WaitForRegex.MatchString(line) {
-				matched = true
+			if opts.WaitForRegex != nil && !matched.Load() && opts.WaitForRegex.MatchString(line) {
+				matched.Store(true)
 				close(matchCh)
 			}
 			if open {
 				info.PublishLine(stream, line)
 			}
 		}
+
 		info.Lock()
-		defer info.Unlock()
 		for ch := range info.logSubs {
 			close(ch)
 		}
-		if err := info.logFile.Flush(); err != nil {
-			slog.Warn("failed to flush log buffer", "id", id, "err", err.Error())
-		}
-		if err := logFile.Close(); err != nil {
-			slog.Warn("failed to close log file", "id", id, "err", err.Error())
-		}
-		close(info.ioDone)
+		info.logSubs = nil
+		info.Unlock()
 	}()
 
 	if opts.WaitForExit || opts.WaitForRegex != nil {

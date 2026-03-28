@@ -20,7 +20,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	pb "github.com/mathiassmichno/venom/api"
+	pb "github.com/mathiassmichno/venom/proto/generated/go"
 )
 
 var (
@@ -92,10 +92,10 @@ func main() {
 					dir := cmd.String("dir")
 					env := cmd.StringSlice("env")
 					if name == "" {
-						return cli.Exit("name required", 1)
+						return fmt.Errorf("name required")
 					}
 					if cmd.IsSet("wait-for-exit") && cmd.IsSet("wait-for-regex") {
-						return cli.Exit("wait-for-exit and wait-for-regex flags are mutually exclusive", 1)
+						return fmt.Errorf("wait-for-exit and wait-for-regex flags are mutually exclusive")
 					}
 
 					ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -119,7 +119,7 @@ func main() {
 						req.WaitFor = &pb.StartProcessRequest_Exit{Exit: true}
 					} else if regexStr := cmd.String("wait-for-regex"); regexStr != "" {
 						if _, err = regexp.Compile(regexStr); err != nil {
-							cli.Exit(fmt.Sprintf("wait-for-regex is not a valid regex: %s", err.Error()), 1)
+							return fmt.Errorf("wait-for-regex is not a valid regex: %w", err)
 						}
 						req.WaitFor = &pb.StartProcessRequest_Regex{Regex: regexStr}
 					}

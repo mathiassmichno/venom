@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"fmt"
+
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
 )
@@ -13,14 +15,20 @@ type Metrics struct {
 }
 
 func CollectMetrics() (*Metrics, error) {
-	cpuPct, _ := cpu.Percent(0, false)
-	memStats, _ := mem.VirtualMemory()
+	cpuPct, err := cpu.Percent(0, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get CPU percent: %w", err)
+	}
 
-	m := &Metrics{
+	memStats, err := mem.VirtualMemory()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get memory stats: %w", err)
+	}
+
+	return &Metrics{
 		CPU:        cpuPct[0],
 		MemPercent: memStats.UsedPercent,
 		MemTotal:   memStats.Total,
 		MemUsed:    memStats.Used,
-	}
-	return m, nil
+	}, nil
 }

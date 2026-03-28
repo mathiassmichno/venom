@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"time"
 
-	pb "github.com/mathiassmichno/venom/api"
+	pb "github.com/mathiassmichno/venom/proto/generated/go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -154,10 +154,18 @@ func (s *Server) StreamLogs(req *pb.StreamLogsRequest, stream pb.VenomDaemon_Str
 }
 
 func (s *Server) ListProcesses(ctx context.Context, _ *emptypb.Empty) (*pb.ListProcessesResponse, error) {
+	s.pm.RLock()
+	procs := make(map[string]*ProcInfo, len(s.pm.Procs))
+	for id, info := range s.pm.Procs {
+		procs[id] = info
+	}
+	s.pm.RUnlock()
+
 	var processes []*pb.ProcessInfo
-	for _, info := range s.pm.Procs {
+	for id, info := range procs {
+		info.RLock()
 		processes = append(processes, &pb.ProcessInfo{
-			Id: info.ID,
+			Id: id,
 			Definition: &pb.ProcessDefinition{
 				Name: info.Cmd.Name,
 				Args: info.Cmd.Args,
@@ -166,6 +174,7 @@ func (s *Server) ListProcesses(ctx context.Context, _ *emptypb.Empty) (*pb.ListP
 			},
 			Status: NewProcessStatusFromProcInfo(info),
 		})
+		info.RUnlock()
 	}
 	return &pb.ListProcessesResponse{Processes: processes}, nil
 }

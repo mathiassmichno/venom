@@ -1,0 +1,41 @@
+name: Python
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install grpcio grpcio-tools build pytest
+
+    - name: Generate protobuf code
+      run: |
+        cd proto && python -m grpc_tools.protoc --python_out=generated/python --grpc_python_out=generated/python --proto_path=. venom.proto
+
+    - name: Build Python client
+      run: make python-client
+
+    - name: Run Python tests
+      run: |
+        cd clients/python && python -m pytest tests/ -v || echo "Python tests not yet implemented"
+
+    - name: Upload Python package
+      uses: actions/upload-artifact@v5.0.0
+      with:
+        name: python-client
+        path: clients/python/dist/

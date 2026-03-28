@@ -1,0 +1,34 @@
+[project]
+name = "venom-client"
+version = "0.1.0"
+description = "Python client library for Venom process management daemon"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Mathias Michno", email = "mathiassmichno@example.com" }]
+keywords = ["process", "management", "daemon", "grpc", "venom"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = ["grpcio>=1.60.0", "protobuf>=5.0.0"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=24.0.0",
+    "mypy>=1.0.0",
+    "grpcio-tools>=1.60.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mathiassmichno/venom"
+Repository = "https://github.com/mathiassmichno/venom.git"
+Issues = "https://github.com/mathiassmichno/venom/issues"

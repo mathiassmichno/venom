@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	pb "github.com/mathiassmichno/venom/api"
-	"github.com/mathiassmichno/venom/internal/daemon"
+	"github.com/mathiassmichno/venom/daemon"
+	pb "github.com/mathiassmichno/venom/proto/generated/go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
