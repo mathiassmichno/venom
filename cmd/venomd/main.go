@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -11,7 +12,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/mathiassmichno/venom/daemon"
 	pb "github.com/mathiassmichno/venom/proto/generated/go"
@@ -22,6 +22,26 @@ import (
 )
 
 func main() {
+	var verbose bool
+
+	// Check environment variable first for verbose logging
+	if os.Getenv("VENOMD_VERBOSE") == "true" {
+		verbose = true
+	}
+
+	// Set up slog handler based on verbose flag
+	var handler slog.Handler
+	if verbose {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})
+	} else {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+	}
+	slog.SetDefault(slog.New(handler))
+
 	var wg sync.WaitGroup
 	stopVenomdCtx, cancel := context.WithCancel(context.Background())
 
@@ -30,11 +50,12 @@ func main() {
 
 	go func() {
 		sig := <-stopSignalCh
-		fmt.Printf(" got: %s\n", sig)
+		slog.Info("received shutdown signal", "signal", sig)
 		cancel()
 	}()
 
 	go func() {
+		slog.Debug("starting pprof server", "addr", "localhost:6060")
 		http.ListenAndServe("localhost:6060", nil)
 	}()
 
@@ -53,12 +74,25 @@ func main() {
 			&cli.IntFlag{
 				Name:  "port",
 				Value: 9988,
+				Usage: "port to listen on",
+			},
+			&cli.BoolFlag{
+				Name:    "verbose",
+				Aliases: []string{"v"},
+				Usage:   "enable debug logging",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			// Handle verbose flag that may have been set
+			if cmd.Bool("verbose") && !verbose {
+				verbose = true
+				slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+			}
+
 			addr := fmt.Sprintf("%s:%d", cmd.StringArg("host"), cmd.Int("port"))
 			lis, err := net.Listen("tcp", addr)
 			if err != nil {
+				slog.Error("failed to create listener", "addr", addr, "err", err)
 				cli.Exit(fmt.Sprintf("listen: %v\n", err), 2)
 			}
 
@@ -68,17 +102,15 @@ func main() {
 			reflection.Register(grpcServer)
 
 			wg.Go(func() {
-				fmt.Println("venomd listening on", addr)
-				time.Sleep(2 * time.Second)
+				slog.Info("gRPC server starting", "addr", addr)
 				if err := grpcServer.Serve(lis); err != nil {
-					fmt.Fprintln(os.Stderr, err)
+					slog.Error("gRPC server error", "err", err)
 				}
 			})
 
 			wg.Go(func() {
 				<-stopVenomdCtx.Done()
-
-				fmt.Println("Shutting down...")
+				slog.Info("shutting down gRPC server")
 				grpcServer.GracefulStop()
 			})
 
@@ -92,7 +124,9 @@ func main() {
 
 	<-stopVenomdCtx.Done()
 
+	slog.Info("shutting down process manager")
 	pm.Shutdown()
+	slog.Info("shutdown complete")
 
 	wg.Wait()
 }

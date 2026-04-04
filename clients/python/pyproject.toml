@@ -1,11 +1,11 @@
 [project]
-name = "venom-client"
+name = "venomctl"
 version = "0.1.0"
-description = "Python client library for Venom process management daemon"
+description = "Python client library for Venomd"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-authors = [{ name = "Mathias Michno", email = "mathiassmichno@example.com" }]
+authors = [{ name = "Mathias Sass Michno", email = "mathiassmichno@gmail.com" }]
 keywords = ["process", "management", "daemon", "grpc", "venom"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -20,13 +20,27 @@ classifiers = [
 ]
 dependencies = ["grpcio>=1.60.0", "protobuf>=5.0.0"]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "black>=24.0.0",
-    "mypy>=1.0.0",
-    "grpcio-tools>=1.60.0",
-]
+[dependency-groups]
+dev = ["grpcio-tools>=1.78.0", "pytest>=9.0.2", "ruff==0.15.9", "ty>=0.0.28"]
+
+[build-system]
+requires = ["uv_build>=0.9.4,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = ["*pb2*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "T"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"examples/*" = ["T"]
+
+[tool.ty.src]
+exclude = ["./venom_client/*pb2*.py"]
 
 [project.urls]
 Homepage = "https://github.com/mathiassmichno/venom"

@@ -4,7 +4,8 @@ Example usage of VenomClient demonstrating common use cases.
 """
 
 import logging
-from venom_client import VenomClient
+
+from venomctl import ProcessError, VenomClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,41 +15,20 @@ def example_basic():
     """Basic process start and stop."""
     print("\n=== Basic Example ===")
     with VenomClient("localhost:9988") as client:
-        result = client.start_process(name="echo", args=["hello", "world"])
-        if result["success"] and result["id"]:
-            print(f"Started process: {result['id']}")
-            client.stop_process(result["id"])
-        else:
-            print(f"Failed to start: {result['error']}")
-
-
-def example_wait_for_exit():
-    """Start process and wait for it to exit."""
-    print("\n=== Wait for Exit Example ===")
-    with VenomClient("localhost:9988") as client:
-        result = client.start_process(
-            name="echo",
-            args=["Process completed successfully!"],
-            wait_for_exit=True,
-            timeout=5.0,
-        )
-        if result["success"]:
-            print(f"Process exited: {result['id']}")
-        else:
-            print(f"Failed: {result['error']}")
+        proc = client.start_process(name="echo", args=["hello", "world"])
+        print(f"Started process: {proc.id}")
+        proc.stop()
 
 
 def example_stream_logs():
-    """Subscribe to process logs."""
+    """Stream process logs."""
     print("\n=== Stream Logs Example ===")
     with VenomClient("localhost:9988") as client:
-        result = client.start_process(
-            name="sh", args=["-c", "echo line1; echo line2; echo line3"]
-        )
-        if result["success"] and result["id"]:
-            print(f"Streaming logs for {result['id']}:")
-            for log in client.subscribe(result["id"]):
-                print(f"  [{log['stream']}] {log['line']}")
+        proc = client.start_process(name="sh", args=["-c", "echo line1; echo line2; echo line3"])
+        print(f"Streaming logs for {proc.id}:")
+        for log in proc.logs():
+            print(f"  [{log.stream}] {log.line}")
+        proc.stop()
 
 
 def example_list_processes():
@@ -58,7 +38,7 @@ def example_list_processes():
         processes = client.list_processes()
         print(f"Running processes: {len(processes)}")
         for proc in processes:
-            print(f"  - {proc['id']}: {proc['name']} {' '.join(proc['args'])}")
+            print(f"  - {proc.id}: {proc.name} {' '.join(proc.args)}")
 
 
 def example_metrics():
@@ -68,11 +48,24 @@ def example_metrics():
         metrics = client.get_metrics()
         if metrics:
             print(f"CPU: {metrics['cpu']:.1f}%")
-            print(
-                f"Memory: {metrics['mem_percent']:.1f}% ({metrics['mem_used'] / 1024**3:.1f} GB / {metrics['mem_total'] / 1024**3:.1f} GB)"
-            )
+            mem_used_gb = metrics["mem_used"] / 1024**3
+            mem_total_gb = metrics["mem_total"] / 1024**3
+            print(f"Memory: {metrics['mem_percent']:.1f}% ({mem_used_gb:.1f} GB / {mem_total_gb:.1f} GB)")
         else:
             print("Failed to get metrics")
+
+
+def example_with_stdin():
+    """Send input to process stdin."""
+    print("\n=== With Stdin Example ===")
+    with VenomClient("localhost:9988") as client:
+        proc = client.start_process(name="sh", args=["-c", "read line; echo got: $line"], with_stdin=True)
+        print(f"Started process: {proc.id}")
+        proc.send_input("hello")
+        proc.close_stdin()
+        for log in proc.logs():
+            print(f"  [{log.stream}] {log.line}")
+        proc.wait()
 
 
 def main():
@@ -82,12 +75,12 @@ def main():
 
     try:
         example_basic()
-        example_wait_for_exit()
         example_stream_logs()
         example_list_processes()
         example_metrics()
-    except ConnectionError as e:
-        print(f"Connection failed: {e}")
+        example_with_stdin()
+    except ProcessError as e:
+        print(f"Process error: {e}")
         print("Make sure the Venom daemon is running on localhost:9988")
     except Exception as e:
         print(f"Error: {e}")

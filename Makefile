@@ -1,6 +1,6 @@
 # Venom - Process Management Daemon
 
-.PHONY: build clean test proto help install-deps python-client all
+.PHONY: build clean test proto help install-deps python-client all lint typecheck check
 
 # Default target
 all: build
@@ -18,7 +18,7 @@ proto:
 	@echo "Generating Go protobuf code..."
 	cd proto && protoc --go_out=generated --go-grpc_out=generated --go_opt=paths=source_relative --go-grpc_opt=paths=source_relative venom.proto
 	@echo "Generating Python protobuf code..."
-	cd proto && python -m grpc_tools.protoc --python_out=../clients/python/venom_client --grpc_python_out=../clients/python/venom_client --proto_path=. venom.proto
+	cd proto && python -m grpc_tools.protoc --python_out=../clients/python/src/venomctl --grpc_python_out=../clients/python/src/venomctl --proto_path=. venom.proto
 	@echo "Protobuf generation complete"
 
 # Run tests for all languages
@@ -27,6 +27,20 @@ test:
 	go test ./...
 	@echo "Running Python tests..."
 	cd clients/python && uv run pytest tests/ -v
+
+# Run Python linting
+lint:
+	@echo "Running ruff..."
+	cd clients/python && uv run ruff check .
+
+# Run Python type checking
+typecheck:
+	@echo "Running ty..."
+	cd clients/python && uv run ty check . --exclude "**/venom_pb2*.py" --ignore unresolved-import --ignore unresolved-attribute
+
+# Run both lint and typecheck
+check: lint typecheck
+	@echo "All checks passed"
 
 # Clean build artifacts
 clean:

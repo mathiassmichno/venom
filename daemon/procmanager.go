@@ -17,6 +17,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// ProcInfo holds process state and is protected by its embedded RWMutex.
+//
+// IMPORTANT: Concurrency invariants:
+//   - The "forwarding goroutine" (spawned in Start()) OWNS the logSubs channels.
+//     Only this goroutine may CLOSE channels. Unsubscribe() only removes from the map.
+//   - When the process ends, the goroutine closes all channels and sets logSubs = nil.
+//   - logFile uses a separate mutex (logFileMu) to allow concurrent writes during
+//     process execution while ensuring flush happens safely outside the main lock.
 type ProcInfo struct {
 	ID    string
 	Cmd   *cmd.Cmd
@@ -29,15 +37,19 @@ type ProcInfo struct {
 	logPrefix bool
 }
 
+// ProcManager manages a collection of running processes.
+// It is safe to call Start, Stop, and Shutdown concurrently.
 type ProcManager struct {
 	sync.RWMutex
 	Procs map[string]*ProcInfo
 }
 
+// NewProcManager creates a new process manager with an empty process map.
 func NewProcManager() *ProcManager {
 	return &ProcManager{Procs: make(map[string]*ProcInfo)}
 }
 
+// ProcStartOptions configures how a process is started.
 type ProcStartOptions struct {
 	Cwd           string
 	Dir           string
@@ -51,12 +63,14 @@ type ProcStartOptions struct {
 	LogEchoStdin  bool
 }
 
+// LogEntry represents a single log line from a process.
 type LogEntry struct {
 	ts     time.Time
 	stream Stream
 	line   string
 }
 
+// Stream represents the source of a log line (stdout or stderr).
 type Stream int
 
 const (
@@ -76,6 +90,12 @@ func (s Stream) String() string {
 	}
 }
 
+// PublishLine sends log entries to all subscribers AND writes to the log file.
+//
+// Gotcha: Uses non-blocking send (select with default) to prevent slow subscribers
+// from blocking the process. If a subscriber's channel buffer is full (200 items),
+// the log is dropped for that subscriber but still written to file and other
+// subscribers receive it. This keeps the process running even if a client disconnects.
 func (p *ProcInfo) PublishLine(stream Stream, line string) {
 	ts := time.Now()
 	p.Lock()
@@ -103,9 +123,16 @@ func (p *ProcInfo) PublishLine(stream Stream, line string) {
 	p.logFileMu.Unlock()
 }
 
+// Subscribe creates a new channel and starts a goroutine to send buffered lines.
+//
+// Channel ownership: The returned channel is owned by the caller, but the
+// forwarding goroutine will CLOSE it when the process exits. Do NOT close it
+// in Subscribe/Unsubscribe - only the goroutine closes.
+//
+// If logSubs is nil (process ended), returns a pre-closed channel.
 func (p *ProcInfo) Subscribe() chan LogEntry {
 	ch := make(chan LogEntry, 200)
-	slog.Info("subscribing", "ch", ch, "id", p.ID, "name", p.Cmd.Name)
+	slog.Debug("subscribing to process logs", "ch", ch, "id", p.ID, "name", p.Cmd.Name)
 	p.Lock()
 	defer p.Unlock()
 
@@ -137,8 +164,10 @@ func (p *ProcInfo) Subscribe() chan LogEntry {
 	return ch
 }
 
+// Unsubscribe removes a subscriber channel from the process.
+// It is safe to call concurrently with PublishLine and other Unsubscribe calls.
 func (p *ProcInfo) Unsubscribe(ch chan LogEntry) {
-	slog.Info("unsubscribing", "ch", ch, "id", p.ID, "name", p.Cmd.Name)
+	slog.Debug("unsubscribing from process logs", "ch", ch, "id", p.ID, "name", p.Cmd.Name)
 	p.Lock()
 	defer p.Unlock()
 
@@ -148,10 +177,31 @@ func (p *ProcInfo) Unsubscribe(ch chan LogEntry) {
 	delete(p.logSubs, ch)
 }
 
+// Start runs a new process and returns its info.
+// The process stdout/stderr are captured and forwarded to subscribers and a log file.
 func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) (*ProcInfo, error) {
 	id := uuid.NewString()
-	slog.Info("starting process", "id", id, "name", name, "args", args, "opts", opts)
-	defer slog.Info("started process", "id", id)
+
+	pm.Lock()
+	if pm.Procs == nil {
+		pm.Procs = make(map[string]*ProcInfo)
+	}
+	activeBefore := len(pm.Procs)
+	pm.Unlock()
+
+	slog.Info("starting process",
+		"id", id,
+		"name", name,
+		"args", args,
+		"opts", opts,
+		"active_procs_before", activeBefore,
+		"active_procs_after", activeBefore+1,
+	)
+	defer slog.Info("process started",
+		"id", id,
+		"name", name,
+		"active_procs", activeBefore+1,
+	)
 
 	logFile, err := os.Create(id + ".log")
 	if err != nil {
@@ -195,11 +245,30 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 		pm.Procs = make(map[string]*ProcInfo)
 	}
 	pm.Procs[id] = info
+	activeAfter := len(pm.Procs)
 	pm.Unlock()
+
+	slog.Info("starting process",
+		"id", id,
+		"name", name,
+		"args", args,
+		"opts", opts,
+		"active_procs_before", activeBefore,
+		"active_procs_after", activeAfter,
+	)
+	defer slog.Info("process started",
+		"id", id,
+		"name", name,
+		"active_procs", activeAfter,
+	)
 
 	matchCh := make(chan struct{})
 	var matched atomic.Bool
 
+	// Forwarding goroutine: handles stdout/stderr, manages logSubs channels, and cleanup.
+	// Lifecycle: runs until process exits, then closes all logSubs channels and ioDone.
+	// IMPORTANT: This goroutine ONLY accesses per-process locks (p.Lock), never pm.Procs.
+	// This is critical for Shutdown() - if it accessed pm.Procs, we'd deadlock.
 	go func() {
 		defer func() {
 			info.logFileMu.Lock()
@@ -247,6 +316,14 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 		}
 		info.logSubs = nil
 		info.Unlock()
+
+		status := info.Cmd.Status()
+		slog.Info("process completed",
+			"id", id,
+			"name", info.Cmd.Name,
+			"exit_code", status.Exit,
+			"complete", status.Complete,
+		)
 	}()
 
 	if opts.WaitForExit || opts.WaitForRegex != nil {
@@ -275,9 +352,16 @@ func (pm *ProcManager) Start(name string, args []string, opts ProcStartOptions) 
 	return info, nil
 }
 
+// Stop terminates a running process by ID.
+// If wait is true, it waits for the process to fully exit before returning.
 func (pm *ProcManager) Stop(id string, wait bool) (*ProcInfo, error) {
-	slog.Info("stopping process", "id", id)
-	defer slog.Info("stopped process", "id", id)
+	pm.Lock()
+	activeBefore := len(pm.Procs)
+	pm.Unlock()
+
+	slog.Info("stopping process", "id", id, "active_procs_before", activeBefore)
+	defer slog.Info("stopped process", "id", id, "active_procs_after", activeBefore-1)
+
 	pm.Lock()
 	p, ok := pm.Procs[id]
 	pm.Unlock()
@@ -295,14 +379,24 @@ func (pm *ProcManager) Stop(id string, wait bool) (*ProcInfo, error) {
 	return p, err
 }
 
+// Shutdown stops all processes.
+//
+// DEADLOCK WARNING: We hold pm.Lock while waiting on p.ioDone for each process.
+// This works because the forwarding goroutine closes ioDone OUTSIDE any lock.
+// If the goroutine tried to acquire pm.Procs lock while we hold it here, DEADLOCK.
+// The goroutine only accesses p.logSubs (per-process lock), never pm.Procs.
 func (pm *ProcManager) Shutdown() error {
-	slog.Info("shutting down process manager", "processes", pm.Procs)
+	pm.Lock()
+	activeCount := len(pm.Procs)
+	pm.Unlock()
+
+	slog.Info("shutting down process manager", "active_procs", activeCount)
 	pm.Lock()
 	defer pm.Unlock()
 	var errs []error
 
 	for id, p := range pm.Procs {
-		slog.Info("stopping process", "id", p.ID)
+		slog.Info("stopping process", "id", p.ID, "remaining", len(pm.Procs))
 		if err := p.Cmd.Stop(); err != nil {
 			errs = append(errs, err)
 		}
