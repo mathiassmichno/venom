@@ -2,44 +2,48 @@ name: Go
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.25'
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.25"
 
-    - name: Install build dependencies
-      run: |
-        go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+      - name: Install build dependencies
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
-    - name: Generate protobuf code
-      run: make proto
+      # Use commited protobufs...
+      # - name: Install Protoc
+      #   uses: arduino/setup-protoc@v3
+      #
+      # - name: Generate protobuf code
+      #   run: make proto
 
-    - name: Run tests
-      run: make test
+      - name: Run tests
+        run: go test -race ./...
 
-    - name: Build binaries
-      run: make build
+      - name: Build binaries
+        run: make build
 
-    - name: Upload venomd binary
-      uses: actions/upload-artifact@v5.0.0
-      with:
-        name: venomd
-        path: bin/venomd
+      - name: Upload venomd binary
+        uses: actions/upload-artifact@v5.0.0
+        with:
+          name: venomd
+          path: bin/venomd
 
-    - name: Upload venomctl binary
-      uses: actions/upload-artifact@v5.0.0
-      with:
-        name: venomctl
-        path: bin/venomctl
+      - name: Upload venomctl binary
+        uses: actions/upload-artifact@v5.0.0
+        with:
+          name: venomctl
+          path: bin/venomctl
